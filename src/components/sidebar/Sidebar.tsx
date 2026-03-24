@@ -320,6 +320,9 @@ export function Sidebar() {
         ) : (
           <p className="text-center text-[10px] py-1">라이브러리가 비어있습니다</p>
         )}
+        <p className="text-center text-[9px] text-text-secondary/50 mt-2">
+          v{__APP_VERSION__}
+        </p>
       </div>
     </aside>
   );

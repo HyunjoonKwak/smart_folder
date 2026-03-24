@@ -1,7 +1,7 @@
 {
   "$schema": "../node_modules/@tauri-apps/cli/config.schema.json",
   "productName": "스마트 폴더",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "identifier": "com.smartcategory.media",
   "build": {
     "frontendDist": "../dist",
@@ -27,7 +27,9 @@
       "assetProtocol": {
         "enable": true,
         "scope": {
-          "allow": ["**"]
+          "allow": [
+            "**"
+          ]
         }
       }
     },

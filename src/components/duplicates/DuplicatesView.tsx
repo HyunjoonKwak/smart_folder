@@ -8,7 +8,6 @@ import {
   Check,
   Trash2,
   Shield,
-  Layers,
   TrendingDown,
   FileImage,
   Eye,
@@ -443,7 +442,7 @@ export function DuplicatesView() {
 
               {/* Member list */}
               <div className="space-y-2">
-                {selectedGroup.members.map((member, memberIdx) => (
+                {selectedGroup.members.map((member) => (
                   <div
                     key={member.media_id}
                     className={`rounded-lg border p-3 transition-colors ${
