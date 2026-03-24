@@ -1,8 +1,8 @@
 [package]
 name = "smart-category"
 version = "0.1.0"
-description = "Smart media organizer with AI-powered classification"
-authors = ["Smart Category"]
+description = "스마트 폴더 - AI 기반 스마트 미디어 정리 도구"
+authors = ["스마트 폴더"]
 license = "MIT"
 edition = "2021"
 rust-version = "1.77.2"

@@ -107,5 +107,4 @@ export type AppView =
   | "organize"
   | "before-after"
   | "history"
-  | "treesize"
   | "foldertree";

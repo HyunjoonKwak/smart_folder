@@ -15,6 +15,7 @@ pub struct DuplicateProgress {
     pub phase: String,
     pub total: usize,
     pub current: usize,
+    pub detail: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -67,17 +68,29 @@ pub async fn detect_duplicates(
         Ok(())
     }).map_err(|e| format!("DB: {}", e))?;
 
+    // Phase 1: Count total files
+    let (total_files, min_size): (i64, i64) = db_ref.with_conn(|conn| {
+        let count: i64 = conn.query_row(
+            "SELECT COUNT(*) FROM media_files WHERE file_size > ?1",
+            params![100 * 1024_i64],
+            |r| r.get(0),
+        )?;
+        Ok((count, 100 * 1024))
+    }).map_err(|e| format!("DB: {}", e))?;
+
     app.emit("duplicate-progress", DuplicateProgress {
-        phase: "크기별 그룹핑...".into(), total: 0, current: 0,
+        phase: "파일 크기 분석".into(),
+        total: total_files as usize,
+        current: 0,
+        detail: format!("전체 {} 파일 중 100KB 이상 분석 중...", total_files),
     }).ok();
 
-    // Only files > 100KB (skip tiny thumbnails/cache)
-    let min_size: i64 = 100 * 1024;
+    // Phase 2: Group by file size (images + videos)
     let size_groups: Vec<(i64, Vec<(String, String)>)> = db_ref
         .with_conn(|conn| {
             let mut stmt = conn.prepare(
                 "SELECT file_size, id, file_path FROM media_files
-                 WHERE media_type = 'image' AND file_size > ?1 ORDER BY file_size"
+                 WHERE file_size > ?1 ORDER BY file_size"
             )?;
             let mut groups: HashMap<i64, Vec<(String, String)>> = HashMap::new();
             let rows = stmt
@@ -91,18 +104,34 @@ pub async fn detect_duplicates(
         .map_err(|e| format!("DB: {}", e))?;
 
     let total_candidates: usize = size_groups.iter().map(|(_, v)| v.len()).sum();
+    let unique_count = total_files as usize - total_candidates;
+
+    app.emit("duplicate-progress", DuplicateProgress {
+        phase: "크기 분석 완료".into(),
+        total: total_files as usize,
+        current: total_files as usize,
+        detail: format!(
+            "전체 {}개 중 크기 일치 {}개 발견 ({}개는 고유 파일)",
+            total_files, total_candidates, unique_count
+        ),
+    }).ok();
 
     if total_candidates == 0 {
         app.emit("duplicate-progress", DuplicateProgress {
-            phase: "complete".into(), total: 0, current: 0,
+            phase: "complete".into(), total: total_files as usize, current: total_files as usize,
+            detail: "중복 후보 없음".into(),
         }).ok();
         return Ok(DuplicateScanResult {
             exact_groups: 0, similar_groups: 0, total_duplicates: 0, space_savings: 0,
         });
     }
 
+    // Phase 3: Hash comparison
     app.emit("duplicate-progress", DuplicateProgress {
-        phase: "해시 비교 중...".into(), total: total_candidates, current: 0,
+        phase: "해시 비교".into(),
+        total: total_candidates,
+        current: 0,
+        detail: format!("크기 일치 {}개 파일의 해시 비교 시작...", total_candidates),
     }).ok();
 
     let mut exact_groups = 0usize;
@@ -165,12 +194,24 @@ pub async fn detect_duplicates(
 
         processed += members.len();
         app.emit("duplicate-progress", DuplicateProgress {
-            phase: "해시 비교 중...".into(), total: total_candidates, current: processed,
+            phase: "해시 비교".into(),
+            total: total_candidates,
+            current: processed,
+            detail: format!(
+                "{}개 비교 완료 · 중복 {}그룹 발견",
+                processed, exact_groups
+            ),
         }).ok();
     }
 
     app.emit("duplicate-progress", DuplicateProgress {
-        phase: "complete".into(), total: total_candidates, current: total_candidates,
+        phase: "complete".into(),
+        total: total_files as usize,
+        current: total_files as usize,
+        detail: format!(
+            "완료: 전체 {}개 파일 중 {}그룹 {}개 중복 발견",
+            total_files, exact_groups, total_duplicates
+        ),
     }).ok();
 
     Ok(DuplicateScanResult { exact_groups, similar_groups: 0, total_duplicates, space_savings })

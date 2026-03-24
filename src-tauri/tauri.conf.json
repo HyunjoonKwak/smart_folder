@@ -1,6 +1,6 @@
 {
   "$schema": "../node_modules/@tauri-apps/cli/config.schema.json",
-  "productName": "Smart Category",
+  "productName": "스마트 폴더",
   "version": "0.1.0",
   "identifier": "com.smartcategory.media",
   "build": {
@@ -12,7 +12,7 @@
   "app": {
     "windows": [
       {
-        "title": "Smart Category",
+        "title": "스마트 폴더",
         "width": 1280,
         "height": 800,
         "minWidth": 800,

@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { formatFileSize, formatDate } from "@/utils/format";
+import { useDuplicateProgress } from "@/hooks/useTauriEvents";
 import {
   Copy,
   Search,
@@ -45,6 +46,7 @@ export function DuplicatesView() {
   const [selectedGroup, setSelectedGroup] = useState<DupGroup | null>(null);
   const [selectedIdx, setSelectedIdx] = useState(0);
   const [scanning, setScanning] = useState(false);
+  const dupProgress = useDuplicateProgress();
 
   const loadGroups = async () => {
     try {
@@ -132,6 +134,19 @@ export function DuplicatesView() {
           <span className="text-[10px] text-text-secondary">
             Space: 미리보기 · ↑↓: 그룹 이동
           </span>
+          {scanning && dupProgress && dupProgress.phase !== "complete" && dupProgress.total > 0 && (
+            <div className="flex items-center gap-2 mr-2">
+              <div className="w-32 h-1.5 bg-bg-primary rounded-full overflow-hidden">
+                <div
+                  className="h-full bg-accent rounded-full transition-all duration-300"
+                  style={{ width: `${(dupProgress.current / dupProgress.total) * 100}%` }}
+                />
+              </div>
+              <span className="text-[10px] text-text-secondary whitespace-nowrap">
+                {dupProgress.phase} {dupProgress.current.toLocaleString()}/{dupProgress.total.toLocaleString()}
+              </span>
+            </div>
+          )}
           <button
             onClick={handleScan}
             disabled={scanning}
@@ -178,7 +193,46 @@ export function DuplicatesView() {
         </div>
       )}
 
-      {groups.length === 0 && !scanning ? (
+      {scanning ? (
+        <div className="flex-1 flex items-center justify-center">
+          <div className="text-center max-w-sm">
+            <div className="w-10 h-10 mx-auto mb-4 border-3 border-accent border-t-transparent rounded-full animate-spin" />
+            {dupProgress && dupProgress.total > 0 ? (
+              <>
+                <p className="text-sm font-medium text-text-primary mb-3">
+                  {dupProgress.phase}
+                </p>
+                <div className="w-72 h-2.5 bg-bg-secondary rounded-full overflow-hidden mx-auto mb-2">
+                  <div
+                    className="h-full bg-accent rounded-full transition-all duration-300"
+                    style={{ width: `${(dupProgress.current / dupProgress.total) * 100}%` }}
+                  />
+                </div>
+                <p className="text-xs text-text-secondary mb-1">
+                  {dupProgress.current.toLocaleString()} / {dupProgress.total.toLocaleString()}
+                  <span className="ml-2 text-accent font-medium">
+                    {Math.round((dupProgress.current / dupProgress.total) * 100)}%
+                  </span>
+                </p>
+                {dupProgress.detail && (
+                  <p className="text-[10px] text-text-secondary/70 mt-2">
+                    {dupProgress.detail}
+                  </p>
+                )}
+              </>
+            ) : (
+              <>
+                <p className="text-sm font-medium text-text-primary mb-1">
+                  중복 파일 탐색 준비 중...
+                </p>
+                <p className="text-xs text-text-secondary">
+                  전체 파일 크기 분석 중
+                </p>
+              </>
+            )}
+          </div>
+        </div>
+      ) : groups.length === 0 ? (
         <div className="flex-1 flex items-center justify-center">
           <div className="text-center text-text-secondary">
             <Copy size={48} className="mx-auto mb-3 opacity-30" />

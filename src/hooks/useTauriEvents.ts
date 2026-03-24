@@ -1,4 +1,4 @@
-import { useEffect } from "react";
+import { useState, useEffect } from "react";
 import { listen } from "@tauri-apps/api/event";
 import { useAppStore } from "@/stores/appStore";
 import type { ScanProgress } from "@/types";
@@ -27,10 +27,11 @@ export function useScanProgress() {
 }
 
 export function useDuplicateProgress() {
-  const [progress, setProgress] = React.useState<{
+  const [progress, setProgress] = useState<{
     phase: string;
     total: number;
     current: number;
+    detail: string;
   } | null>(null);
 
   useEffect(() => {
@@ -47,7 +48,7 @@ export function useDuplicateProgress() {
 }
 
 export function useOrganizeProgress() {
-  const [progress, setProgress] = React.useState<{
+  const [progress, setProgress] = useState<{
     phase: string;
     total: number;
     current: number;
@@ -66,5 +67,3 @@ export function useOrganizeProgress() {
 
   return progress;
 }
-
-import React from "react";

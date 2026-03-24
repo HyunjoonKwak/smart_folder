@@ -8,11 +8,10 @@ import { GalleryGrid } from "@/components/gallery/GalleryGrid";
 import { DuplicatesView } from "@/components/duplicates/DuplicatesView";
 import { OrganizeView } from "@/components/organize/OrganizeView";
 import { HistoryView } from "@/components/organize/HistoryView";
-import { TreeSizeView } from "@/components/treesize/TreeSizeView";
 import { FolderTreeView } from "@/components/foldertree/FolderTreeView";
 import type { AppView, MediaStats } from "@/types";
 
-const FULL_WIDTH_VIEWS: ReadonlySet<AppView> = new Set(["treesize", "foldertree"]);
+const FULL_WIDTH_VIEWS: ReadonlySet<AppView> = new Set(["foldertree"]);
 
 function App() {
   const currentView = useAppStore((s) => s.currentView);
@@ -43,8 +42,6 @@ function App() {
         return <OrganizeView />;
       case "history":
         return <HistoryView />;
-      case "treesize":
-        return <TreeSizeView />;
       case "foldertree":
         return <FolderTreeView />;
       default:

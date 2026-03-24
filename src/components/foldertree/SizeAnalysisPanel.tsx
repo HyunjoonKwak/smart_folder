@@ -37,7 +37,7 @@ interface FolderAnalysis {
   largest_files: LargeFile[];
 }
 
-export function TreeSizeView() {
+export function SizeAnalysisPanel() {
   const [analysis, setAnalysis] = useState<FolderAnalysis | null>(null);
   const [loading, setLoading] = useState(false);
 
@@ -48,11 +48,11 @@ export function TreeSizeView() {
     try {
       const result = await invoke<FolderAnalysis>("analyze_folder", {
         path: selected as string,
-        depth: 3,
+        depth: 5,
       });
       setAnalysis(result);
     } catch {
-      // Handle error
+      // Silently handle - user sees empty state
     }
     setLoading(false);
   };
@@ -61,12 +61,15 @@ export function TreeSizeView() {
     return (
       <div className="flex-1 flex items-center justify-center">
         <div className="text-center">
-          <HardDrive size={48} className="mx-auto mb-3 text-text-secondary/20" />
-          <p className="text-sm text-text-secondary mb-3">폴더의 용량을 분석합니다</p>
+          <HardDrive size={40} className="mx-auto mb-3 text-text-secondary/20" />
+          <p className="text-xs text-text-secondary mb-1">폴더의 용량을 분석합니다</p>
+          <p className="text-[10px] text-text-secondary/60 mb-3">
+            폴더별 용량 비율, 파일 유형 통계, 대용량 파일 확인
+          </p>
           <button
             onClick={handleAnalyze}
             disabled={loading}
-            className="px-6 py-2 rounded-md text-xs font-medium bg-accent text-white hover:bg-accent-hover disabled:opacity-50 transition-colors"
+            className="px-5 py-2 rounded-md text-xs font-medium bg-accent text-white hover:bg-accent-hover disabled:opacity-50 transition-colors"
           >
             {loading ? (
               <span className="flex items-center gap-2">
@@ -88,18 +91,18 @@ export function TreeSizeView() {
   return (
     <div className="flex-1 flex flex-col overflow-hidden">
       {/* Header */}
-      <div className="p-3 border-b border-border flex items-center justify-between bg-bg-secondary/50">
+      <div className="p-2 border-b border-border flex items-center justify-between bg-bg-secondary/50">
         <div className="flex items-center gap-2">
-          <HardDrive size={16} className="text-accent" />
-          <span className="text-xs font-semibold text-text-primary truncate">{analysis.path}</span>
+          <HardDrive size={14} className="text-accent" />
+          <span className="text-[11px] font-semibold text-text-primary truncate">{analysis.path}</span>
         </div>
-        <div className="flex items-center gap-3 text-xs text-text-secondary">
+        <div className="flex items-center gap-3 text-[10px] text-text-secondary">
           <span className="font-bold text-text-primary">{formatFileSize(analysis.total_size)}</span>
           <span>{analysis.file_count.toLocaleString()}개 파일</span>
           <span>{analysis.folder_count.toLocaleString()}개 폴더</span>
           <button
             onClick={handleAnalyze}
-            className="px-3 py-1 rounded text-xs bg-accent text-white hover:bg-accent-hover transition-colors"
+            className="px-2 py-0.5 rounded text-[10px] bg-accent text-white hover:bg-accent-hover transition-colors"
           >
             다른 폴더
           </button>
@@ -107,7 +110,7 @@ export function TreeSizeView() {
       </div>
 
       <div className="flex-1 flex overflow-hidden">
-        {/* Folder tree */}
+        {/* Folder tree with size bars */}
         <div className="flex-1 overflow-y-auto p-2">
           {analysis.children.map((child) => (
             <FolderRow key={child.path} node={child} maxSize={analysis.total_size} depth={0} />
@@ -115,9 +118,9 @@ export function TreeSizeView() {
         </div>
 
         {/* Stats panel */}
-        <div className="w-64 border-l border-border overflow-y-auto p-3 bg-bg-secondary/30">
+        <div className="w-60 border-l border-border overflow-y-auto p-2.5 bg-bg-secondary/30">
           {/* Type breakdown */}
-          <h3 className="text-xs font-semibold text-text-primary mb-2">파일 유형별 용량</h3>
+          <h3 className="text-[11px] font-semibold text-text-primary mb-2">파일 유형별 용량</h3>
           <div className="space-y-1.5 mb-4">
             {analysis.type_stats.slice(0, 15).map((stat) => (
               <div key={stat.ext}>
@@ -145,8 +148,8 @@ export function TreeSizeView() {
           {/* Largest files */}
           {analysis.largest_files.length > 0 && (
             <>
-              <h3 className="text-xs font-semibold text-text-primary mb-2 flex items-center gap-1">
-                <AlertTriangle size={12} className="text-warning" />
+              <h3 className="text-[11px] font-semibold text-text-primary mb-2 flex items-center gap-1">
+                <AlertTriangle size={11} className="text-warning" />
                 대용량 파일 (10MB+)
               </h3>
               <div className="space-y-1">
@@ -193,7 +196,11 @@ function FolderRow({
         onClick={() => hasChildren && setIsOpen(!isOpen)}
       >
         {hasChildren ? (
-          isOpen ? <ChevronDown size={12} className="text-text-secondary shrink-0" /> : <ChevronRight size={12} className="text-text-secondary shrink-0" />
+          isOpen ? (
+            <ChevronDown size={12} className="text-text-secondary shrink-0" />
+          ) : (
+            <ChevronRight size={12} className="text-text-secondary shrink-0" />
+          )
         ) : (
           <span className="w-3 shrink-0" />
         )}

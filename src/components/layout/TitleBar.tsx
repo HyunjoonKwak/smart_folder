@@ -8,14 +8,12 @@ import {
   Copy,
   ArrowRightLeft,
   History,
-  HardDrive,
   FolderTree,
 } from "lucide-react";
 
 const NAV_ITEMS = [
   { id: "gallery" as const, label: "갤러리", icon: Grid3x3 },
   { id: "foldertree" as const, label: "폴더 탐색", icon: FolderTree },
-  { id: "treesize" as const, label: "용량 분석", icon: HardDrive },
   { id: "duplicates" as const, label: "중복 탐지", icon: Copy },
   { id: "organize" as const, label: "정리", icon: ArrowRightLeft },
   { id: "history" as const, label: "히스토리", icon: History },
@@ -39,7 +37,7 @@ export function TitleBar() {
       <div className="flex items-center gap-1 mr-2">
         <FolderOpen size={18} className="text-accent" />
         <span className="font-semibold text-sm text-text-primary">
-          Smart Category
+          스마트 폴더
         </span>
       </div>
 
