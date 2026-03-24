@@ -1,0 +1,143 @@
+use rusqlite::Connection;
+
+pub fn run(conn: &Connection) -> Result<(), rusqlite::Error> {
+    conn.execute_batch(
+        "
+        CREATE TABLE IF NOT EXISTS media_files (
+            id TEXT PRIMARY KEY,
+            file_path TEXT NOT NULL UNIQUE,
+            original_path TEXT NOT NULL,
+            file_name TEXT NOT NULL,
+            file_size INTEGER NOT NULL,
+            mime_type TEXT,
+            sha256_hash TEXT,
+            quick_hash TEXT,
+            phash BLOB,
+            width INTEGER,
+            height INTEGER,
+            media_type TEXT NOT NULL DEFAULT 'image',
+            created_at TEXT NOT NULL,
+            modified_at TEXT NOT NULL,
+            scanned_at TEXT NOT NULL,
+            source_type TEXT NOT NULL DEFAULT 'local',
+            thumbnail TEXT,
+            scan_phase INTEGER NOT NULL DEFAULT 0
+        );
+
+        CREATE TABLE IF NOT EXISTS media_exif (
+            media_id TEXT PRIMARY KEY REFERENCES media_files(id) ON DELETE CASCADE,
+            date_taken TEXT,
+            camera_make TEXT,
+            camera_model TEXT,
+            lens_model TEXT,
+            focal_length REAL,
+            aperture REAL,
+            iso INTEGER,
+            gps_latitude REAL,
+            gps_longitude REAL,
+            gps_altitude REAL,
+            orientation INTEGER
+        );
+
+        CREATE TABLE IF NOT EXISTS tags (
+            id TEXT PRIMARY KEY,
+            name TEXT NOT NULL UNIQUE,
+            category TEXT NOT NULL DEFAULT 'user',
+            created_at TEXT NOT NULL
+        );
+
+        CREATE TABLE IF NOT EXISTS media_tags (
+            media_id TEXT NOT NULL REFERENCES media_files(id) ON DELETE CASCADE,
+            tag_id TEXT NOT NULL REFERENCES tags(id) ON DELETE CASCADE,
+            confidence REAL DEFAULT 1.0,
+            source TEXT NOT NULL DEFAULT 'user',
+            PRIMARY KEY (media_id, tag_id)
+        );
+
+        CREATE TABLE IF NOT EXISTS albums (
+            id TEXT PRIMARY KEY,
+            name TEXT NOT NULL,
+            description TEXT,
+            cover_media_id TEXT REFERENCES media_files(id) ON DELETE SET NULL,
+            auto_generated INTEGER NOT NULL DEFAULT 0,
+            created_at TEXT NOT NULL
+        );
+
+        CREATE TABLE IF NOT EXISTS album_media (
+            album_id TEXT NOT NULL REFERENCES albums(id) ON DELETE CASCADE,
+            media_id TEXT NOT NULL REFERENCES media_files(id) ON DELETE CASCADE,
+            sort_order INTEGER NOT NULL DEFAULT 0,
+            PRIMARY KEY (album_id, media_id)
+        );
+
+        CREATE TABLE IF NOT EXISTS duplicate_groups (
+            id TEXT PRIMARY KEY,
+            match_type TEXT NOT NULL,
+            similarity_score REAL,
+            status TEXT NOT NULL DEFAULT 'pending'
+        );
+
+        CREATE TABLE IF NOT EXISTS duplicate_members (
+            group_id TEXT NOT NULL REFERENCES duplicate_groups(id) ON DELETE CASCADE,
+            media_id TEXT NOT NULL REFERENCES media_files(id) ON DELETE CASCADE,
+            is_preferred INTEGER NOT NULL DEFAULT 0,
+            PRIMARY KEY (group_id, media_id)
+        );
+
+        CREATE TABLE IF NOT EXISTS classification_rules (
+            id TEXT PRIMARY KEY,
+            name TEXT NOT NULL,
+            priority INTEGER NOT NULL DEFAULT 0,
+            conditions_json TEXT NOT NULL,
+            action_type TEXT NOT NULL,
+            action_value TEXT NOT NULL,
+            enabled INTEGER NOT NULL DEFAULT 1
+        );
+
+        CREATE TABLE IF NOT EXISTS source_folders (
+            id TEXT PRIMARY KEY,
+            path TEXT NOT NULL UNIQUE,
+            name TEXT NOT NULL,
+            added_at TEXT NOT NULL,
+            last_scanned_at TEXT
+        );
+
+        CREATE TABLE IF NOT EXISTS undo_journal (
+            id TEXT PRIMARY KEY,
+            batch_id TEXT NOT NULL,
+            batch_name TEXT,
+            sequence INTEGER NOT NULL,
+            operation TEXT NOT NULL,
+            source_path TEXT,
+            target_path TEXT,
+            metadata_json TEXT,
+            status TEXT NOT NULL DEFAULT 'pending',
+            executed_at TEXT,
+            undone_at TEXT
+        );
+
+        CREATE INDEX IF NOT EXISTS idx_media_sha256 ON media_files(sha256_hash);
+        CREATE INDEX IF NOT EXISTS idx_media_phash ON media_files(phash);
+        CREATE INDEX IF NOT EXISTS idx_media_quick_hash ON media_files(quick_hash);
+        CREATE INDEX IF NOT EXISTS idx_media_file_size ON media_files(file_size);
+        CREATE INDEX IF NOT EXISTS idx_media_path ON media_files(file_path);
+        CREATE INDEX IF NOT EXISTS idx_media_incremental ON media_files(file_path, modified_at, file_size);
+        CREATE INDEX IF NOT EXISTS idx_media_scan_phase ON media_files(scan_phase);
+        CREATE INDEX IF NOT EXISTS idx_exif_date ON media_exif(date_taken);
+        CREATE INDEX IF NOT EXISTS idx_exif_gps ON media_exif(gps_latitude, gps_longitude);
+        CREATE INDEX IF NOT EXISTS idx_undo_batch ON undo_journal(batch_id);
+        CREATE INDEX IF NOT EXISTS idx_media_type ON media_files(media_type);
+
+        -- Migration: add columns if missing (for existing DBs)
+        -- SQLite doesn't support IF NOT EXISTS for ALTER TABLE, so we ignore errors
+        ",
+    )?;
+
+    // Safe column additions for existing databases
+    let _ = conn.execute_batch("ALTER TABLE media_files ADD COLUMN scan_phase INTEGER NOT NULL DEFAULT 0");
+    let _ = conn.execute_batch("ALTER TABLE media_files ADD COLUMN thumbnail TEXT");
+    // Remove old column data if migrating
+    let _ = conn.execute_batch("UPDATE media_files SET thumbnail = NULL WHERE thumbnail IS NULL AND scan_phase = 0");
+
+    Ok(())
+}
