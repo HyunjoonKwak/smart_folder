@@ -283,13 +283,182 @@ pub async fn get_duplicate_groups(db: State<'_, Arc<Database>>) -> Result<DupSum
     }).map_err(|e| format!("DB: {}", e))
 }
 
-// Open file with system default app (Finder/Preview)
+// Set a specific member as preferred (keep this one) in a duplicate group
+#[tauri::command]
+pub async fn set_preferred_member(
+    db: State<'_, Arc<Database>>,
+    group_id: String,
+    media_id: String,
+) -> Result<(), String> {
+    let db_ref = db.inner().clone();
+    db_ref
+        .with_conn(|conn| {
+            // Reset all members in this group to not preferred
+            conn.execute(
+                "UPDATE duplicate_members SET is_preferred = 0 WHERE group_id = ?1",
+                params![group_id],
+            )?;
+            // Set the chosen member as preferred
+            conn.execute(
+                "UPDATE duplicate_members SET is_preferred = 1 WHERE group_id = ?1 AND media_id = ?2",
+                params![group_id, media_id],
+            )?;
+            Ok(())
+        })
+        .map_err(|e| format!("DB: {}", e))
+}
+
+// Dismiss a duplicate group (mark as resolved, keep all files)
+#[tauri::command]
+pub async fn dismiss_duplicate_group(
+    db: State<'_, Arc<Database>>,
+    group_id: String,
+) -> Result<(), String> {
+    let db_ref = db.inner().clone();
+    db_ref
+        .with_conn(|conn| {
+            conn.execute(
+                "UPDATE duplicate_groups SET status = 'dismissed' WHERE id = ?1",
+                params![group_id],
+            )?;
+            Ok(())
+        })
+        .map_err(|e| format!("DB: {}", e))
+}
+
+// Trash result
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct TrashResult {
+    pub success: usize,
+    pub failed: usize,
+    pub errors: Vec<String>,
+}
+
+// Shared: move files to trash and clean up DB
+fn trash_files_and_cleanup(
+    db_ref: &Arc<Database>,
+    files_to_trash: &[(String, String)],
+) -> Result<TrashResult, String> {
+    let mut success = 0usize;
+    let mut failed = 0usize;
+    let mut errors = Vec::new();
+    let mut trashed_ids = Vec::new();
+
+    for (media_id, file_path) in files_to_trash {
+        let result = std::process::Command::new("osascript")
+            .arg("-e")
+            .arg(format!(
+                "tell application \"Finder\" to delete POSIX file \"{}\"",
+                file_path
+            ))
+            .output();
+
+        match result {
+            Ok(output) if output.status.success() => {
+                success += 1;
+                trashed_ids.push(media_id.clone());
+            }
+            _ => {
+                failed += 1;
+                let fname = Path::new(file_path)
+                    .file_name()
+                    .map(|n| n.to_string_lossy().into_owned())
+                    .unwrap_or_else(|| file_path.clone());
+                errors.push(fname);
+            }
+        }
+    }
+
+    if !trashed_ids.is_empty() {
+        db_ref
+            .with_conn(|conn| {
+                let tx = conn.unchecked_transaction()?;
+                for id in &trashed_ids {
+                    tx.execute("DELETE FROM media_files WHERE id = ?1", params![id])?;
+                    tx.execute("DELETE FROM duplicate_members WHERE media_id = ?1", params![id])?;
+                }
+                // Resolve groups with 0-1 members left
+                tx.execute(
+                    "UPDATE duplicate_groups SET status = 'resolved'
+                     WHERE id IN (
+                       SELECT dg.id FROM duplicate_groups dg
+                       LEFT JOIN duplicate_members dm ON dg.id = dm.group_id
+                       WHERE dg.status = 'pending'
+                       GROUP BY dg.id
+                       HAVING COUNT(dm.media_id) <= 1
+                     )",
+                    [],
+                )?;
+                tx.commit()
+            })
+            .map_err(|e| format!("DB: {}", e))?;
+    }
+
+    Ok(TrashResult { success, failed, errors })
+}
+
+// Trash all non-preferred duplicate files across all pending groups
+#[tauri::command]
+pub async fn trash_duplicate_files(
+    db: State<'_, Arc<Database>>,
+) -> Result<TrashResult, String> {
+    let db_ref = db.inner().clone();
+
+    let files_to_trash: Vec<(String, String)> = db_ref
+        .with_conn(|conn| {
+            let mut stmt = conn.prepare(
+                "SELECT dm.media_id, mf.file_path
+                 FROM duplicate_members dm
+                 JOIN duplicate_groups dg ON dm.group_id = dg.id
+                 JOIN media_files mf ON dm.media_id = mf.id
+                 WHERE dg.status = 'pending' AND dm.is_preferred = 0"
+            )?;
+            let rows = stmt
+                .query_map([], |row| Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?)))?
+                .collect::<Result<Vec<_>, _>>()?;
+            Ok(rows)
+        })
+        .map_err(|e| format!("DB: {}", e))?;
+
+    trash_files_and_cleanup(&db_ref, &files_to_trash)
+}
+
+// Trash non-preferred files in a single group
+#[tauri::command]
+pub async fn trash_group_duplicates(
+    db: State<'_, Arc<Database>>,
+    group_id: String,
+) -> Result<TrashResult, String> {
+    let db_ref = db.inner().clone();
+
+    let files_to_trash: Vec<(String, String)> = db_ref
+        .with_conn(|conn| {
+            let mut stmt = conn.prepare(
+                "SELECT dm.media_id, mf.file_path
+                 FROM duplicate_members dm
+                 JOIN media_files mf ON dm.media_id = mf.id
+                 WHERE dm.group_id = ?1 AND dm.is_preferred = 0"
+            )?;
+            let rows = stmt
+                .query_map(params![group_id], |row| {
+                    Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?))
+                })?
+                .collect::<Result<Vec<_>, _>>()?;
+            Ok(rows)
+        })
+        .map_err(|e| format!("DB: {}", e))?;
+
+    trash_files_and_cleanup(&db_ref, &files_to_trash)
+}
+
+// Reveal file in Finder (select the file in its parent folder)
 #[tauri::command]
 pub async fn open_file(path: String) -> Result<(), String> {
     std::process::Command::new("open")
+        .arg("-R")
         .arg(&path)
         .spawn()
-        .map_err(|e| format!("Failed to open: {}", e))?;
+        .map_err(|e| format!("Failed to reveal in Finder: {}", e))?;
     Ok(())
 }
 

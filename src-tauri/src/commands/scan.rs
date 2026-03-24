@@ -129,7 +129,7 @@ pub async fn process_phase1(
         return Ok((0, done as usize, total as usize));
     }
 
-    // Process in parallel with rayon
+    // Process in parallel with rayon: EXIF + dimensions + thumbnail
     let results: Vec<_> = batch
         .par_iter()
         .filter_map(|(id, file_path, media_type)| {
@@ -137,6 +137,7 @@ pub async fn process_phase1(
             let mut width = None;
             let mut height = None;
             let mut exif_out = None;
+            let mut thumbnail = None;
 
             if path.exists() && media_type == "image" {
                 let exif = metadata::extract_exif(path);
@@ -154,9 +155,12 @@ pub async fn process_phase1(
                     camera_model: exif.camera_model, gps_latitude: exif.gps_latitude,
                     gps_longitude: exif.gps_longitude, orientation: exif.orientation,
                 });
+                thumbnail = make_thumbnail_fast(path);
+            } else if path.exists() && media_type == "video" {
+                thumbnail = make_video_thumbnail(path);
             }
 
-            Some((id.clone(), width, height, exif_out))
+            Some((id.clone(), width, height, exif_out, thumbnail))
         })
         .collect();
 
@@ -164,8 +168,8 @@ pub async fn process_phase1(
 
     db_ref.with_conn(|conn| {
         let tx = conn.unchecked_transaction()?;
-        for (id, w, h, exif) in &results {
-            queries::update_media_phase1(&tx, id, *w, *h, None)?;
+        for (id, w, h, exif, thumb) in &results {
+            queries::update_media_phase1(&tx, id, *w, *h, thumb.as_deref())?;
             if let Some(e) = exif {
                 queries::insert_media_exif(&tx, e)?;
             }
