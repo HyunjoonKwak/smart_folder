@@ -220,7 +220,7 @@ export function BcutView() {
   const groups = summary?.groups ?? [];
 
   return (
-    <div className="flex-1 flex flex-col overflow-hidden bg-bg-primary">
+    <div className="flex-1 flex flex-col overflow-hidden bg-bg-primary relative">
       {/* Header */}
       <div className="px-4 py-2.5 border-b border-border flex items-center justify-between shrink-0">
         <div className="flex items-center gap-2.5">
@@ -316,12 +316,6 @@ export function BcutView() {
             </span>
           </div>
           <div className="flex items-center gap-2">
-            {trashResult && (
-              <span className="text-[10px] text-success">
-                <Check size={10} className="inline mr-0.5" />
-                {trashResult}
-              </span>
-            )}
             <button
               onClick={handleTrashAll}
               disabled={trashing || summary.total_bcuts === 0}
@@ -625,6 +619,44 @@ export function BcutView() {
               </div>
             </div>
           )}
+        </div>
+      )}
+      {/* Trashing overlay */}
+      {trashing && (
+        <div className="absolute inset-0 z-50 bg-black/60 backdrop-blur-sm flex items-center justify-center">
+          <div className="text-center animate-slide-in">
+            <div className="w-16 h-16 mx-auto mb-4 rounded-full bg-danger/20 flex items-center justify-center">
+              <Trash2 size={28} className="text-danger animate-pulse" />
+            </div>
+            <p className="text-sm font-semibold text-white mb-1">
+              B컷 정리 중...
+            </p>
+            <p className="text-[11px] text-white/60">
+              {summary?.total_bcuts ?? 0}개 파일을 휴지통으로 이동하고 있습니다
+            </p>
+            <div className="mt-4 w-40 mx-auto h-1 bg-white/10 rounded-full overflow-hidden">
+              <div className="h-full bg-danger rounded-full animate-[shimmer_1.5s_infinite]" style={{ width: "60%" }} />
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Trash complete overlay */}
+      {trashResult && !trashing && (
+        <div
+          className="absolute inset-0 z-50 bg-black/50 backdrop-blur-sm flex items-center justify-center cursor-pointer"
+          onClick={() => setTrashResult(null)}
+        >
+          <div className="text-center animate-mark-pulse">
+            <div className="w-16 h-16 mx-auto mb-4 rounded-full bg-success/20 flex items-center justify-center">
+              <Check size={32} className="text-success" />
+            </div>
+            <p className="text-sm font-semibold text-white mb-1">
+              정리 완료
+            </p>
+            <p className="text-[11px] text-white/60">{trashResult}</p>
+            <p className="text-[9px] text-white/30 mt-3">클릭하여 닫기</p>
+          </div>
         </div>
       )}
     </div>
