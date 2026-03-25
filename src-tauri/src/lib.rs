@@ -74,6 +74,8 @@ pub fn run() {
             commands::bcut::set_bcut_best,
             commands::bcut::dismiss_bcut_group,
             commands::bcut::trash_bcut_files,
+            commands::bcut::compute_quality_scores,
+            commands::fileops::trash_review_files,
             commands::fileops::scan_date_folders,
             commands::fileops::rename_date_folders,
             commands::organize::preview_organize,

@@ -18,6 +18,7 @@ import {
   RotateCcw,
   FolderTree,
   Focus,
+  ScanSearch,
 } from "lucide-react";
 import { formatFileSize } from "@/utils/format";
 
@@ -295,6 +296,11 @@ export function Sidebar() {
             icon={Focus}
             label="B컷 정리"
             onClick={() => useAppStore.getState().setCurrentView("bcut")}
+          />
+          <SidebarItem
+            icon={ScanSearch}
+            label="사진 리뷰"
+            onClick={() => useAppStore.getState().setCurrentView("review")}
           />
           <SidebarItem
             icon={FolderTree}

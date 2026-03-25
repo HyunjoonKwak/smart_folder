@@ -362,6 +362,61 @@ pub async fn trash_bcut_files(
     Ok(result)
 }
 
+// Quick quality score for a batch of media IDs (for photo reviewer)
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct QuickScore {
+    pub media_id: String,
+    pub sharpness: f64,
+    pub exposure: f64,
+    pub total: f64,
+}
+
+#[tauri::command]
+pub async fn compute_quality_scores(
+    db: State<'_, Arc<Database>>,
+    media_ids: Vec<String>,
+) -> Result<Vec<QuickScore>, String> {
+    let db_ref = db.inner().clone();
+
+    let files: Vec<(String, String, Option<i32>, Option<i32>, i64)> = db_ref
+        .with_conn(|conn| {
+            let placeholders: Vec<String> = media_ids.iter().enumerate()
+                .map(|(i, _)| format!("?{}", i + 1)).collect();
+            let query = format!(
+                "SELECT id, file_path, width, height, file_size FROM media_files WHERE id IN ({})",
+                placeholders.join(",")
+            );
+            let mut stmt = conn.prepare(&query)?;
+            let params: Vec<&dyn rusqlite::ToSql> = media_ids.iter()
+                .map(|s| s as &dyn rusqlite::ToSql).collect();
+            let rows = stmt.query_map(params.as_slice(), |row| {
+                Ok((row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?, row.get(4)?))
+            })?.collect::<Result<Vec<_>, _>>()?;
+            Ok(rows)
+        })
+        .map_err(|e| format!("DB: {}", e))?;
+
+    let scores: Vec<QuickScore> = files
+        .par_iter()
+        .filter_map(|(id, path, w, h, size)| {
+            let p = Path::new(path);
+            if !p.exists() { return None; }
+            let sharpness = quality::compute_sharpness(p).unwrap_or(0.0);
+            let sharpness_norm = (sharpness / 20.0).min(100.0);
+            let exposure = quality::compute_exposure(p).unwrap_or(50.0);
+            let total = sharpness_norm * 0.5 + exposure * 0.5;
+            Some(QuickScore {
+                media_id: id.clone(),
+                sharpness: sharpness_norm,
+                exposure,
+                total,
+            })
+        })
+        .collect();
+
+    Ok(scores)
+}
+
 fn parse_datetime(s: &str) -> Option<chrono::NaiveDateTime> {
     chrono::NaiveDateTime::parse_from_str(s, "%Y-%m-%d %H:%M:%S")
         .or_else(|_| chrono::NaiveDateTime::parse_from_str(s, "%Y:%m:%d %H:%M:%S"))

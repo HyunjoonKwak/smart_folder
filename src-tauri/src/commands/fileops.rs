@@ -727,3 +727,37 @@ fn resolve_conflict(dest: &Path) -> std::path::PathBuf {
     }
     dest.to_path_buf()
 }
+
+// Trash files by path (for photo reviewer - no DB cleanup needed)
+#[tauri::command]
+pub async fn trash_review_files(file_paths: Vec<String>) -> Result<FileOpResult, String> {
+    let mut success = 0usize;
+    let mut failed = 0usize;
+    let mut errors = Vec::new();
+
+    for file_path in &file_paths {
+        let result = std::process::Command::new("osascript")
+            .arg("-e")
+            .arg(format!(
+                "tell application \"Finder\" to delete POSIX file \"{}\"",
+                file_path
+            ))
+            .output();
+
+        match result {
+            Ok(output) if output.status.success() => {
+                success += 1;
+            }
+            _ => {
+                failed += 1;
+                let fname = Path::new(file_path)
+                    .file_name()
+                    .map(|n| n.to_string_lossy().into_owned())
+                    .unwrap_or_else(|| file_path.clone());
+                errors.push(fname);
+            }
+        }
+    }
+
+    Ok(FileOpResult { success, failed, errors })
+}

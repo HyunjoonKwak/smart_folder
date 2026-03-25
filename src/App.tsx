@@ -10,6 +10,7 @@ import { OrganizeView } from "@/components/organize/OrganizeView";
 import { HistoryView } from "@/components/organize/HistoryView";
 import { FolderTreeView } from "@/components/foldertree/FolderTreeView";
 import { BcutView } from "@/components/bcut/BcutView";
+import { ReviewView } from "@/components/review/ReviewView";
 import type { AppView, MediaStats } from "@/types";
 
 const FULL_WIDTH_VIEWS: ReadonlySet<AppView> = new Set(["foldertree"]);
@@ -47,6 +48,8 @@ function App() {
         return <FolderTreeView />;
       case "bcut":
         return <BcutView />;
+      case "review":
+        return <ReviewView />;
       default:
         return <GalleryGrid />;
     }
