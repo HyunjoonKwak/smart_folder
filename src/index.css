@@ -43,6 +43,31 @@
   100% { transform: translateX(200%); }
 }
 
+@keyframes mark-pulse {
+  0% { transform: scale(0.8); opacity: 0; }
+  50% { transform: scale(1.1); opacity: 1; }
+  100% { transform: scale(1); opacity: 1; }
+}
+
+@keyframes slide-in {
+  from { transform: translateX(8px); opacity: 0; }
+  to { transform: translateX(0); opacity: 1; }
+}
+
+.animate-mark-pulse {
+  animation: mark-pulse 0.3s ease-out;
+}
+
+.animate-slide-in {
+  animation: slide-in 0.2s ease-out;
+}
+
+/* Thin scrollbar for thumbnail strip */
+.scrollbar-thin::-webkit-scrollbar { height: 4px; }
+.scrollbar-thin::-webkit-scrollbar-track { background: transparent; }
+.scrollbar-thin::-webkit-scrollbar-thumb { background: var(--color-border); border-radius: 2px; }
+.scrollbar-thin::-webkit-scrollbar-thumb:hover { background: var(--color-text-secondary); }
+
 @media (prefers-color-scheme: dark) {
   @theme {
     --color-bg-primary: #111111;
