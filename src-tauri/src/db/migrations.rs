@@ -116,6 +116,23 @@ pub fn run(conn: &Connection) -> Result<(), rusqlite::Error> {
             undone_at TEXT
         );
 
+        CREATE TABLE IF NOT EXISTS bcut_groups (
+            id TEXT PRIMARY KEY,
+            group_reason TEXT NOT NULL DEFAULT 'time',
+            member_count INTEGER NOT NULL DEFAULT 0,
+            status TEXT NOT NULL DEFAULT 'pending'
+        );
+
+        CREATE TABLE IF NOT EXISTS bcut_members (
+            group_id TEXT NOT NULL REFERENCES bcut_groups(id) ON DELETE CASCADE,
+            media_id TEXT NOT NULL REFERENCES media_files(id) ON DELETE CASCADE,
+            quality_score REAL NOT NULL DEFAULT 0,
+            sharpness_score REAL NOT NULL DEFAULT 0,
+            exposure_score REAL NOT NULL DEFAULT 0,
+            is_best INTEGER NOT NULL DEFAULT 0,
+            PRIMARY KEY (group_id, media_id)
+        );
+
         CREATE INDEX IF NOT EXISTS idx_media_sha256 ON media_files(sha256_hash);
         CREATE INDEX IF NOT EXISTS idx_media_phash ON media_files(phash);
         CREATE INDEX IF NOT EXISTS idx_media_quick_hash ON media_files(quick_hash);

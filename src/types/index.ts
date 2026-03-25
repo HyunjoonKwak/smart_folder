@@ -107,4 +107,5 @@ export type AppView =
   | "organize"
   | "before-after"
   | "history"
-  | "foldertree";
+  | "foldertree"
+  | "bcut";

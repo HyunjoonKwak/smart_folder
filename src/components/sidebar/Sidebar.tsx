@@ -17,6 +17,7 @@ import {
   Trash2,
   RotateCcw,
   FolderTree,
+  Focus,
 } from "lucide-react";
 import { formatFileSize } from "@/utils/format";
 
@@ -289,6 +290,11 @@ export function Sidebar() {
             icon={Sparkles}
             label="AI 분류"
             onClick={() => useAppStore.getState().setCurrentView("organize")}
+          />
+          <SidebarItem
+            icon={Focus}
+            label="B컷 정리"
+            onClick={() => useAppStore.getState().setCurrentView("bcut")}
           />
           <SidebarItem
             icon={FolderTree}

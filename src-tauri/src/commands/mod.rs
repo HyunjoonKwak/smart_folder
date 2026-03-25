@@ -1,3 +1,4 @@
+pub mod bcut;
 pub mod scan;
 pub mod media;
 pub mod duplicate;
