@@ -526,6 +526,193 @@ fn classify_file_type(ext: &str) -> String {
     }
 }
 
+// Scan for folders with YYYYMMDD date format and suggest renames to YYYY-MM-DD
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct DateFolderMatch {
+    pub path: String,
+    pub current_name: String,
+    pub suggested_name: String,
+    pub has_conflict: bool,
+    pub conflict_file_count: u64,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct DateFolderScanResult {
+    pub matches: Vec<DateFolderMatch>,
+    pub total_scanned: usize,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct RenameResult {
+    pub success: usize,
+    pub failed: usize,
+    pub errors: Vec<String>,
+}
+
+fn parse_yyyymmdd_prefix(name: &str) -> Option<(u32, u32, u32, &str)> {
+    // Check first 8 chars are ASCII digits (safe for multibyte strings)
+    let bytes = name.as_bytes();
+    if bytes.len() < 8 {
+        return None;
+    }
+    if !bytes[..8].iter().all(|b| b.is_ascii_digit()) {
+        return None;
+    }
+
+    // Safe to slice since we confirmed ASCII-only for first 8 bytes
+    let date_part = &name[..8];
+    let year: u32 = date_part[..4].parse().ok()?;
+    let month: u32 = date_part[4..6].parse().ok()?;
+    let day: u32 = date_part[6..8].parse().ok()?;
+
+    // Basic date validation
+    if year < 1900 || year > 2099 || month < 1 || month > 12 || day < 1 || day > 31 {
+        return None;
+    }
+
+    // Already has hyphens (YYYY-MM-DD) -> skip
+    if bytes.len() >= 10 && bytes[4] == b'-' && bytes[7] == b'-' {
+        return None;
+    }
+
+    let suffix = &name[8..];
+    Some((year, month, day, suffix))
+}
+
+#[tauri::command]
+pub async fn scan_date_folders(path: String, recursive: bool) -> Result<DateFolderScanResult, String> {
+    let root = Path::new(&path);
+    if !root.is_dir() {
+        return Err("Invalid directory".into());
+    }
+
+    let mut matches = Vec::new();
+    let mut total_scanned = 0usize;
+    scan_date_folders_recursive(root, recursive, &mut matches, &mut total_scanned);
+
+    Ok(DateFolderScanResult { matches, total_scanned })
+}
+
+fn scan_date_folders_recursive(
+    dir: &Path,
+    recursive: bool,
+    matches: &mut Vec<DateFolderMatch>,
+    total_scanned: &mut usize,
+) {
+    let entries = match std::fs::read_dir(dir) {
+        Ok(e) => e,
+        Err(_) => return,
+    };
+
+    for entry in entries.flatten() {
+        let name = entry.file_name().to_string_lossy().into_owned();
+        if name.starts_with('.') {
+            continue;
+        }
+
+        let meta = match entry.metadata() {
+            Ok(m) => m,
+            Err(_) => continue,
+        };
+
+        if !meta.is_dir() {
+            continue;
+        }
+
+        *total_scanned += 1;
+
+        if let Some((year, month, day, suffix)) = parse_yyyymmdd_prefix(&name) {
+            let suggested = format!("{:04}-{:02}-{:02}{}", year, month, day, suffix);
+            let dest = dir.join(&suggested);
+            let (has_conflict, conflict_file_count) = if dest.is_dir() {
+                let count = std::fs::read_dir(&dest)
+                    .map(|rd| rd.flatten().count() as u64)
+                    .unwrap_or(0);
+                (true, count)
+            } else {
+                (false, 0)
+            };
+            matches.push(DateFolderMatch {
+                path: entry.path().to_string_lossy().into(),
+                current_name: name.clone(),
+                suggested_name: suggested,
+                has_conflict,
+                conflict_file_count,
+            });
+        }
+
+        if recursive {
+            scan_date_folders_recursive(&entry.path(), true, matches, total_scanned);
+        }
+    }
+}
+
+// Move all contents from src folder into dest folder, then remove empty src
+fn merge_folder_contents(src: &Path, dest: &Path) -> Result<(), String> {
+    let entries = std::fs::read_dir(src).map_err(|e| e.to_string())?;
+    for entry in entries.flatten() {
+        let entry_name = entry.file_name();
+        let target = dest.join(&entry_name);
+
+        if target.exists() {
+            // Conflict within merge: add suffix to avoid overwrite
+            let resolved = resolve_conflict(&target);
+            std::fs::rename(entry.path(), &resolved).map_err(|e| e.to_string())?;
+        } else {
+            std::fs::rename(entry.path(), &target).map_err(|e| e.to_string())?;
+        }
+    }
+    // Remove the now-empty source folder
+    std::fs::remove_dir(src).map_err(|e| format!("remove empty src: {}", e))?;
+    Ok(())
+}
+
+#[tauri::command]
+pub async fn rename_date_folders(folders: Vec<DateFolderMatch>, merge: bool) -> Result<RenameResult, String> {
+    let mut success = 0usize;
+    let mut failed = 0usize;
+    let mut errors = Vec::new();
+
+    for item in &folders {
+        let src = Path::new(&item.path);
+        let parent = match src.parent() {
+            Some(p) => p,
+            None => {
+                failed += 1;
+                errors.push(format!("{}: no parent directory", item.current_name));
+                continue;
+            }
+        };
+        let dest = parent.join(&item.suggested_name);
+
+        if dest.exists() {
+            if !merge {
+                failed += 1;
+                errors.push(format!("{}: target already exists", item.suggested_name));
+                continue;
+            }
+            // Merge: move all contents from src into dest
+            match merge_folder_contents(src, &dest) {
+                Ok(_) => success += 1,
+                Err(e) => {
+                    failed += 1;
+                    errors.push(format!("{}: merge failed - {}", item.current_name, e));
+                }
+            }
+        } else {
+            match std::fs::rename(src, &dest) {
+                Ok(_) => success += 1,
+                Err(e) => {
+                    failed += 1;
+                    errors.push(format!("{}: {}", item.current_name, e));
+                }
+            }
+        }
+    }
+
+    Ok(RenameResult { success, failed, errors })
+}
+
 fn resolve_conflict(dest: &Path) -> std::path::PathBuf {
     if !dest.exists() { return dest.to_path_buf(); }
 

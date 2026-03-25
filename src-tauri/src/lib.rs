@@ -69,6 +69,8 @@ pub fn run() {
             commands::fileops::create_directory,
             commands::fileops::analyze_folder,
             commands::fileops::get_folder_tree,
+            commands::fileops::scan_date_folders,
+            commands::fileops::rename_date_folders,
             commands::organize::preview_organize,
             commands::organize::execute_organize,
             commands::undo::get_undo_history,

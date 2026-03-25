@@ -1,14 +1,16 @@
 import { useState } from "react";
-import { FolderTree, HardDrive, Columns2 } from "lucide-react";
+import { FolderTree, HardDrive, Columns2, CalendarDays } from "lucide-react";
 import { TreePanel } from "./TreePanel";
 import { SizeAnalysisPanel } from "./SizeAnalysisPanel";
+import { DateFolderRenamePanel } from "./DateFolderRenamePanel";
 
-type ViewMode = "tree" | "size" | "split";
+type ViewMode = "tree" | "size" | "split" | "date-rename";
 
 const MODE_ITEMS: Array<{ id: ViewMode; label: string; icon: typeof FolderTree }> = [
   { id: "tree", label: "폴더 탐색", icon: FolderTree },
   { id: "size", label: "용량 분석", icon: HardDrive },
   { id: "split", label: "분할 비교", icon: Columns2 },
+  { id: "date-rename", label: "날짜 폴더 정리", icon: CalendarDays },
 ];
 
 export function FolderTreeView() {
@@ -45,6 +47,7 @@ export function FolderTreeView() {
             <TreePanel />
           </>
         )}
+        {mode === "date-rename" && <DateFolderRenamePanel />}
       </div>
     </div>
   );
