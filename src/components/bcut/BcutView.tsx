@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useMemo } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { formatFileSize, formatDate } from "@/utils/format";
@@ -7,11 +7,15 @@ import {
   Search,
   Check,
   Trash2,
-  Shield,
+  Crown,
   Eye,
   FolderOpen,
   SkipForward,
   Sparkles,
+  X,
+  Zap,
+  Sun,
+  Maximize2,
 } from "lucide-react";
 
 interface BcutMember {
@@ -68,7 +72,9 @@ export function BcutView() {
     const unlisten = listen<BcutProgress>("bcut-progress", (e) => {
       setProgress(e.payload);
     });
-    return () => { unlisten.then((f) => f()); };
+    return () => {
+      unlisten.then((f) => f());
+    };
   }, []);
 
   const loadGroups = async () => {
@@ -157,7 +163,18 @@ export function BcutView() {
     setTrashing(false);
   };
 
-  // Keyboard navigation
+  const totalSavings = useMemo(() => {
+    if (!summary) return 0;
+    let size = 0;
+    for (const g of summary.groups) {
+      for (const m of g.members) {
+        if (!m.is_best) size += m.file_size;
+      }
+    }
+    return size;
+  }, [summary]);
+
+  // Keyboard
   const handleKeyDown = useCallback(
     (e: KeyboardEvent) => {
       if (!summary || !selectedGroup) return;
@@ -203,20 +220,29 @@ export function BcutView() {
   const groups = summary?.groups ?? [];
 
   return (
-    <div className="flex-1 flex flex-col overflow-hidden">
+    <div className="flex-1 flex flex-col overflow-hidden bg-bg-primary">
       {/* Header */}
-      <div className="p-3 border-b border-border flex items-center justify-between">
-        <div className="flex items-center gap-3">
-          <Focus size={20} className="text-accent" />
-          <h2 className="text-sm font-semibold text-text-primary">B컷 정리</h2>
+      <div className="px-4 py-2.5 border-b border-border flex items-center justify-between shrink-0">
+        <div className="flex items-center gap-2.5">
+          <div className="w-7 h-7 rounded-lg bg-accent/10 flex items-center justify-center">
+            <Focus size={15} className="text-accent" />
+          </div>
+          <div>
+            <h2 className="text-[13px] font-semibold text-text-primary leading-tight">
+              B컷 자동 탐지
+            </h2>
+            <p className="text-[9px] text-text-secondary">
+              연사 그룹화 + 품질 분석
+            </p>
+          </div>
         </div>
         <div className="flex items-center gap-2">
           <label className="flex items-center gap-1.5 text-[10px] text-text-secondary">
-            시간 간격
+            간격
             <select
               value={timeGap}
               onChange={(e) => setTimeGap(Number(e.target.value))}
-              className="bg-bg-secondary border border-border rounded px-1.5 py-0.5 text-[10px]"
+              className="bg-bg-secondary border border-border rounded-md px-2 py-1 text-[10px] focus:outline-none focus:ring-1 focus:ring-accent/50"
             >
               <option value={2}>2초</option>
               <option value={5}>5초</option>
@@ -228,7 +254,7 @@ export function BcutView() {
           <button
             onClick={handleDetect}
             disabled={scanning}
-            className="flex items-center gap-2 px-3 py-1.5 rounded-md text-xs font-medium bg-accent text-white hover:bg-accent-hover disabled:opacity-50 transition-colors"
+            className="flex items-center gap-1.5 px-3.5 py-1.5 rounded-lg text-[11px] font-medium bg-accent text-white hover:bg-accent-hover disabled:opacity-50 shadow-sm shadow-accent/20 transition-all"
           >
             {scanning ? (
               <>
@@ -237,8 +263,8 @@ export function BcutView() {
               </>
             ) : (
               <>
-                <Search size={13} />
-                B컷 분석
+                <Search size={12} />
+                분석 시작
               </>
             )}
           </button>
@@ -247,23 +273,23 @@ export function BcutView() {
 
       {/* Progress */}
       {scanning && progress && (
-        <div className="px-4 py-2 border-b border-border bg-bg-secondary/50">
-          <div className="flex items-center justify-between text-[10px] text-text-secondary mb-1">
-            <span>
+        <div className="px-4 py-2 border-b border-border bg-accent/5 shrink-0">
+          <div className="flex items-center justify-between text-[10px] mb-1.5">
+            <span className="text-accent font-medium">
               {progress.phase === "grouping"
                 ? "시간 기반 그룹화 중..."
-                : `품질 분석 중... (${progress.current}/${progress.total})`}
+                : `품질 분석 중...`}
             </span>
             {progress.total > 0 && (
-              <span>
-                {Math.round((progress.current / progress.total) * 100)}%
+              <span className="text-text-secondary tabular-nums">
+                {progress.current} / {progress.total}
               </span>
             )}
           </div>
           {progress.total > 0 && (
-            <div className="w-full h-1 bg-bg-secondary rounded-full overflow-hidden">
+            <div className="w-full h-1 bg-accent/10 rounded-full overflow-hidden">
               <div
-                className="h-full bg-accent transition-all"
+                className="h-full bg-accent rounded-full transition-all duration-300"
                 style={{
                   width: `${(progress.current / progress.total) * 100}%`,
                 }}
@@ -275,66 +301,63 @@ export function BcutView() {
 
       {/* Summary bar */}
       {summary && summary.total_groups > 0 && (
-        <div className="p-3 border-b border-border bg-bg-secondary/50">
-          <div className="flex items-center gap-3">
-            <div className="flex items-center gap-4 flex-1 text-xs">
-              <span className="text-text-secondary">
-                <strong className="text-text-primary">
-                  {summary.total_groups}
-                </strong>{" "}
-                그룹
+        <div className="px-4 py-2 border-b border-border flex items-center justify-between shrink-0">
+          <div className="flex items-center gap-4 text-[11px]">
+            <span className="text-text-secondary">
+              <strong className="text-text-primary">{summary.total_groups}</strong> 그룹
+            </span>
+            <span className="text-danger">
+              <X size={10} className="inline mr-0.5 -mt-px" />
+              <strong>{summary.total_bcuts}</strong> B컷
+            </span>
+            <span className="text-success">
+              <Sparkles size={10} className="inline mr-0.5 -mt-px" />
+              {formatFileSize(totalSavings)} 절약 가능
+            </span>
+          </div>
+          <div className="flex items-center gap-2">
+            {trashResult && (
+              <span className="text-[10px] text-success">
+                <Check size={10} className="inline mr-0.5" />
+                {trashResult}
               </span>
-              <span className="text-danger">
-                <Trash2 size={11} className="inline mr-0.5 -mt-0.5" />
-                <strong>{summary.total_bcuts}</strong>개 B컷
-              </span>
-            </div>
+            )}
             <button
               onClick={handleTrashAll}
               disabled={trashing || summary.total_bcuts === 0}
-              className="flex items-center gap-2 px-4 py-2 rounded-md text-xs font-medium bg-danger text-white hover:bg-danger/90 disabled:opacity-50 transition-colors"
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[10px] font-medium bg-danger text-white hover:bg-danger/90 disabled:opacity-50 shadow-sm transition-all"
             >
               {trashing ? (
-                <>
-                  <div className="w-3 h-3 border-2 border-white border-t-transparent rounded-full animate-spin" />
-                  처리 중...
-                </>
+                <div className="w-3 h-3 border-2 border-white border-t-transparent rounded-full animate-spin" />
               ) : (
-                <>
-                  <Trash2 size={13} />
-                  {summary.total_bcuts}개 B컷 휴지통으로
-                </>
+                <Trash2 size={11} />
               )}
+              전체 B컷 정리
             </button>
           </div>
-          {trashResult && (
-            <p className="text-xs text-success mt-2">{trashResult}</p>
-          )}
         </div>
       )}
 
-      {/* Empty / No results */}
+      {/* Empty state */}
       {!scanning && (!summary || summary.total_groups === 0) && (
         <div className="flex-1 flex items-center justify-center">
-          <div className="text-center max-w-sm">
-            <Focus size={40} className="mx-auto mb-3 text-text-secondary/30" />
-            <p className="text-sm text-text-primary font-medium mb-1">
+          <div className="text-center max-w-xs">
+            <div className="w-16 h-16 mx-auto mb-4 rounded-2xl bg-accent/10 flex items-center justify-center">
+              <Focus size={28} className="text-accent" />
+            </div>
+            <p className="text-sm font-semibold text-text-primary mb-1">
               B컷 자동 탐지
             </p>
-            <p className="text-[10px] text-text-secondary leading-relaxed mb-4">
-              연속 촬영된 사진들을 그룹화하고
+            <p className="text-[11px] text-text-secondary leading-relaxed mb-5">
+              연속 촬영 사진을 시간 기준으로 그룹화하고
               <br />
-              선명도·노출을 분석하여 베스트 컷을 자동 추천합니다.
-              <br />
-              <span className="text-text-secondary/60">
-                (EXIF 촬영일시 기준, 이미지만 분석)
-              </span>
+              선명도·노출을 분석하여 베스트 컷을 추천합니다.
             </p>
             {summary && summary.total_groups === 0 && (
-              <p className="text-[10px] text-success">
-                <Check size={12} className="inline mr-1" />
-                B컷이 발견되지 않았습니다.
-              </p>
+              <div className="inline-flex items-center gap-1.5 text-[11px] text-success bg-success/10 px-3 py-1.5 rounded-full">
+                <Check size={12} />
+                B컷이 발견되지 않았습니다
+              </div>
             )}
           </div>
         </div>
@@ -344,10 +367,13 @@ export function BcutView() {
       {summary && groups.length > 0 && (
         <div className="flex-1 flex overflow-hidden">
           {/* Group list */}
-          <div className="w-64 border-r border-border overflow-y-auto">
+          <div className="w-60 border-r border-border overflow-y-auto bg-bg-secondary/30">
             {groups.map((group, idx) => {
               const best = group.members.find((m) => m.is_best);
-              const bcutCount = group.members.filter((m) => !m.is_best).length;
+              const bcutCount = group.members.filter(
+                (m) => !m.is_best,
+              ).length;
+              const isActive = selectedGroup?.id === group.id;
               return (
                 <button
                   key={group.id}
@@ -355,29 +381,49 @@ export function BcutView() {
                     setSelectedGroup(group);
                     setSelectedIdx(idx);
                   }}
-                  className={`w-full p-3 text-left border-b border-border/50 transition-colors ${
-                    selectedGroup?.id === group.id
-                      ? "bg-accent/5 border-l-2 border-l-accent"
-                      : "hover:bg-bg-secondary"
+                  className={`w-full flex gap-2.5 p-2.5 text-left border-b border-border/30 transition-all ${
+                    isActive
+                      ? "bg-accent/8 border-l-2 border-l-accent"
+                      : "hover:bg-bg-secondary/80 border-l-2 border-l-transparent"
                   }`}
                 >
-                  <div className="flex items-center justify-between">
-                    <span className="text-xs font-medium text-text-primary">
-                      그룹 {idx + 1}
-                    </span>
-                    <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-accent/10 text-accent">
-                      {group.members.length}장
-                    </span>
+                  {/* Thumbnail preview */}
+                  <div className="w-11 h-11 rounded-md overflow-hidden bg-bg-secondary shrink-0">
+                    {best?.thumbnail ? (
+                      <img
+                        src={`data:image/jpeg;base64,${best.thumbnail}`}
+                        alt=""
+                        className="w-full h-full object-cover"
+                      />
+                    ) : (
+                      <div className="w-full h-full flex items-center justify-center">
+                        <Focus size={14} className="text-text-secondary/20" />
+                      </div>
+                    )}
                   </div>
-                  <p className="text-[10px] text-text-secondary mt-1 truncate">
-                    {best?.file_name ?? group.members[0]?.file_name}
-                  </p>
-                  <div className="flex items-center gap-2 mt-1 text-[10px]">
-                    <span className="text-success">
-                      <Sparkles size={9} className="inline mr-0.5" />
-                      {Math.round(best?.quality_score ?? 0)}점
-                    </span>
-                    <span className="text-danger">B컷 {bcutCount}개</span>
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center justify-between">
+                      <span
+                        className={`text-[11px] font-medium ${isActive ? "text-accent" : "text-text-primary"}`}
+                      >
+                        그룹 {idx + 1}
+                      </span>
+                      <span className="text-[9px] text-text-secondary">
+                        {group.members.length}장
+                      </span>
+                    </div>
+                    <p className="text-[9px] text-text-secondary truncate mt-0.5">
+                      {best?.file_name ?? group.members[0]?.file_name}
+                    </p>
+                    <div className="flex items-center gap-1.5 mt-1">
+                      <span className="inline-flex items-center gap-0.5 text-[8px] text-success bg-success/10 px-1.5 py-px rounded-full">
+                        <Crown size={7} />
+                        {Math.round(best?.quality_score ?? 0)}
+                      </span>
+                      <span className="text-[8px] text-danger/70">
+                        -{bcutCount}
+                      </span>
+                    </div>
                   </div>
                 </button>
               );
@@ -386,156 +432,196 @@ export function BcutView() {
 
           {/* Detail view */}
           {selectedGroup && (
-            <div className="flex-1 p-4 overflow-y-auto">
-              {/* Explanation */}
-              <p className="text-[10px] text-text-secondary mb-3 bg-bg-secondary/50 rounded-md px-3 py-2">
-                <Sparkles
-                  size={10}
-                  className="inline text-accent mr-1 -mt-0.5"
-                />
-                선명도·노출·해상도를 종합 평가하여 베스트 컷을 추천합니다.
-                다른 사진을 선택하려면 &quot;베스트로 선택&quot;을 누르세요.
-                <span className="text-text-secondary/60 ml-1">
-                  단축키: 1-9 선택, S 건너뛰기, J/K 이동, Space 미리보기
-                </span>
-              </p>
-
-              {/* Member grid */}
-              <div className="grid grid-cols-2 xl:grid-cols-3 gap-3">
-                {selectedGroup.members.map((member, mi) => (
-                  <div
-                    key={member.media_id}
-                    className={`rounded-lg border overflow-hidden transition-colors ${
-                      member.is_best
-                        ? "border-success ring-2 ring-success/20"
-                        : "border-border"
-                    }`}
-                  >
-                    {/* Thumbnail */}
-                    <div className="relative aspect-[4/3] bg-bg-secondary">
-                      {member.thumbnail ? (
-                        <img
-                          src={`data:image/jpeg;base64,${member.thumbnail}`}
-                          alt={member.file_name}
-                          className={`w-full h-full object-cover ${!member.is_best ? "opacity-70" : ""}`}
-                        />
-                      ) : (
-                        <div className="w-full h-full flex items-center justify-center">
-                          <Focus
-                            size={24}
-                            className="text-text-secondary/20"
-                          />
-                        </div>
-                      )}
-
-                      {/* Score badge */}
-                      <div
-                        className={`absolute top-2 left-2 px-2 py-1 rounded-md text-[10px] font-bold backdrop-blur-sm ${
-                          member.is_best
-                            ? "bg-success/90 text-white"
-                            : "bg-black/60 text-white/80"
-                        }`}
-                      >
-                        {member.is_best && (
-                          <Shield
-                            size={9}
-                            className="inline mr-0.5 -mt-0.5"
-                          />
-                        )}
-                        {Math.round(member.quality_score)}점
-                      </div>
-
-                      {/* Number */}
-                      <div className="absolute top-2 right-2 w-5 h-5 rounded-full bg-black/50 text-white text-[9px] flex items-center justify-center font-bold backdrop-blur-sm">
-                        {mi + 1}
-                      </div>
-
-                      {/* Action overlay */}
-                      <div className="absolute bottom-2 right-2 flex gap-1">
-                        <button
-                          onClick={() => handlePreview(member.file_path)}
-                          className="p-1.5 rounded-md bg-black/50 hover:bg-black/70 backdrop-blur-sm transition-colors"
-                          title="미리보기"
-                        >
-                          <Eye size={12} className="text-white" />
-                        </button>
-                        <button
-                          onClick={() => handleOpenFile(member.file_path)}
-                          className="p-1.5 rounded-md bg-black/50 hover:bg-black/70 backdrop-blur-sm transition-colors"
-                          title="Finder에서 보기"
-                        >
-                          <FolderOpen size={12} className="text-white" />
-                        </button>
-                      </div>
-                    </div>
-
-                    {/* Info */}
-                    <div className="p-2.5">
-                      <p
-                        className={`text-[11px] font-medium truncate ${member.is_best ? "text-text-primary" : "text-text-secondary"}`}
-                      >
-                        {member.file_name}
-                      </p>
-
-                      {/* Score breakdown */}
-                      <div className="mt-1.5 space-y-1">
-                        <ScoreBar
-                          label="선명도"
-                          value={member.sharpness_score}
-                          color="blue"
-                        />
-                        <ScoreBar
-                          label="노출"
-                          value={member.exposure_score}
-                          color="amber"
-                        />
-                      </div>
-
-                      <div className="flex gap-2 mt-1.5 text-[9px] text-text-secondary">
-                        <span>{formatFileSize(member.file_size)}</span>
-                        {member.width && member.height && (
-                          <span>
-                            {member.width}x{member.height}
-                          </span>
-                        )}
-                        {member.date_taken && (
-                          <span>{formatDate(member.date_taken)}</span>
-                        )}
-                      </div>
-
-                      {/* Action button */}
-                      {member.is_best ? (
-                        <div className="mt-2 flex items-center justify-center gap-1 py-1.5 rounded-md text-[10px] font-bold text-success bg-success/10">
-                          <Check size={11} />
-                          베스트 컷
-                        </div>
-                      ) : (
-                        <button
-                          onClick={() =>
-                            handleSetBest(
-                              selectedGroup.id,
-                              member.media_id,
-                            )
-                          }
-                          className="mt-2 w-full py-1.5 rounded-md text-[10px] font-medium bg-accent text-white hover:bg-accent-hover transition-colors"
-                        >
-                          베스트로 선택
-                        </button>
-                      )}
-                    </div>
-                  </div>
-                ))}
-              </div>
-
-              {/* Group actions */}
-              <div className="mt-4 flex gap-2">
+            <div className="flex-1 flex flex-col overflow-hidden">
+              {/* Group header */}
+              <div className="px-4 py-2 flex items-center justify-between border-b border-border/50 shrink-0">
+                <div className="flex items-center gap-2 text-[11px]">
+                  <span className="text-text-primary font-medium">
+                    그룹 {selectedIdx + 1}
+                  </span>
+                  <span className="text-text-secondary">
+                    {selectedGroup.members.length}장 비교
+                  </span>
+                  <span className="text-[9px] text-text-secondary/50">
+                    1-9 선택 · S 건너뛰기 · Space 미리보기
+                  </span>
+                </div>
                 <button
                   onClick={() => handleDismissGroup(selectedGroup.id)}
-                  className="flex items-center justify-center gap-1.5 flex-1 py-2 rounded-md text-xs font-medium bg-bg-secondary text-text-secondary hover:bg-bg-primary transition-colors"
+                  className="flex items-center gap-1 px-2.5 py-1 rounded-md text-[10px] font-medium text-text-secondary hover:bg-bg-secondary transition-colors"
                 >
-                  <SkipForward size={12} />
-                  건너뛰기 (모두 유지)
+                  <SkipForward size={11} />
+                  건너뛰기
                 </button>
+              </div>
+
+              {/* Card grid */}
+              <div className="flex-1 p-4 overflow-y-auto">
+                <div className="grid grid-cols-2 xl:grid-cols-3 gap-3">
+                  {selectedGroup.members.map((member, mi) => {
+                    const isBest = member.is_best;
+                    return (
+                      <div
+                        key={member.media_id}
+                        className={`group rounded-xl overflow-hidden transition-all duration-200 ${
+                          isBest
+                            ? "ring-2 ring-success shadow-lg shadow-success/10"
+                            : "ring-1 ring-border hover:ring-accent/30 hover:shadow-md"
+                        }`}
+                      >
+                        {/* Image area */}
+                        <div className="relative aspect-[4/3] bg-[#0a0a0a] overflow-hidden">
+                          {member.thumbnail ? (
+                            <img
+                              src={`data:image/jpeg;base64,${member.thumbnail}`}
+                              alt={member.file_name}
+                              className={`w-full h-full object-cover transition-all duration-200 ${
+                                isBest
+                                  ? ""
+                                  : "opacity-60 group-hover:opacity-90"
+                              }`}
+                            />
+                          ) : (
+                            <div className="w-full h-full flex items-center justify-center">
+                              <Focus
+                                size={20}
+                                className="text-white/10"
+                              />
+                            </div>
+                          )}
+
+                          {/* Number badge */}
+                          <div
+                            className={`absolute top-2 right-2 w-6 h-6 rounded-full flex items-center justify-center text-[10px] font-bold backdrop-blur-md ${
+                              isBest
+                                ? "bg-success text-white"
+                                : "bg-black/40 text-white/70"
+                            }`}
+                          >
+                            {mi + 1}
+                          </div>
+
+                          {/* Best crown */}
+                          {isBest && (
+                            <div className="absolute top-2 left-2 flex items-center gap-1 bg-success/90 text-white px-2 py-1 rounded-md text-[9px] font-bold backdrop-blur-sm">
+                              <Crown size={10} />
+                              BEST
+                            </div>
+                          )}
+
+                          {/* B-cut label */}
+                          {!isBest && (
+                            <div className="absolute top-2 left-2 flex items-center gap-1 bg-black/50 text-white/60 px-2 py-1 rounded-md text-[9px] font-medium backdrop-blur-sm">
+                              <X size={9} />
+                              B컷
+                            </div>
+                          )}
+
+                          {/* Score overlay */}
+                          <div className="absolute bottom-0 inset-x-0 bg-gradient-to-t from-black/70 to-transparent pt-6 pb-2 px-2.5">
+                            <div className="flex items-end justify-between">
+                              <span
+                                className={`text-xl font-bold tabular-nums ${
+                                  isBest ? "text-success" : "text-white/50"
+                                }`}
+                              >
+                                {Math.round(member.quality_score)}
+                              </span>
+                              {/* Action buttons */}
+                              <div className="flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                                <button
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    handlePreview(member.file_path);
+                                  }}
+                                  className="p-1.5 rounded-md bg-white/10 hover:bg-white/20 transition-colors"
+                                  title="미리보기"
+                                >
+                                  <Eye size={12} className="text-white" />
+                                </button>
+                                <button
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    handleOpenFile(member.file_path);
+                                  }}
+                                  className="p-1.5 rounded-md bg-white/10 hover:bg-white/20 transition-colors"
+                                  title="Finder"
+                                >
+                                  <FolderOpen
+                                    size={12}
+                                    className="text-white"
+                                  />
+                                </button>
+                              </div>
+                            </div>
+                          </div>
+                        </div>
+
+                        {/* Info panel */}
+                        <div className="p-2.5 bg-bg-primary">
+                          <p className="text-[10px] text-text-primary font-medium truncate">
+                            {member.file_name}
+                          </p>
+
+                          {/* Score bars */}
+                          <div className="mt-2 space-y-1.5">
+                            <ScoreBar
+                              icon={<Zap size={8} />}
+                              label="선명도"
+                              value={member.sharpness_score}
+                              color="blue"
+                            />
+                            <ScoreBar
+                              icon={<Sun size={8} />}
+                              label="노출"
+                              value={member.exposure_score}
+                              color="amber"
+                            />
+                            <ScoreBar
+                              icon={<Maximize2 size={8} />}
+                              label="종합"
+                              value={member.quality_score}
+                              color={isBest ? "green" : "gray"}
+                            />
+                          </div>
+
+                          {/* Meta */}
+                          <div className="flex gap-2 mt-2 text-[8px] text-text-secondary/60">
+                            <span>{formatFileSize(member.file_size)}</span>
+                            {member.width && member.height && (
+                              <span>
+                                {member.width}x{member.height}
+                              </span>
+                            )}
+                            {member.date_taken && (
+                              <span>{formatDate(member.date_taken)}</span>
+                            )}
+                          </div>
+
+                          {/* Action */}
+                          {isBest ? (
+                            <div className="mt-2 flex items-center justify-center gap-1 py-1.5 rounded-lg text-[10px] font-bold text-success bg-success/8">
+                              <Crown size={10} />
+                              베스트 컷
+                            </div>
+                          ) : (
+                            <button
+                              onClick={() =>
+                                handleSetBest(
+                                  selectedGroup.id,
+                                  member.media_id,
+                                )
+                              }
+                              className="mt-2 w-full py-1.5 rounded-lg text-[10px] font-medium bg-bg-secondary text-text-secondary hover:bg-accent hover:text-white transition-all"
+                            >
+                              베스트로 선택
+                            </button>
+                          )}
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
               </div>
             </div>
           )}
@@ -546,27 +632,36 @@ export function BcutView() {
 }
 
 function ScoreBar({
+  icon,
   label,
   value,
   color,
 }: {
+  icon: React.ReactNode;
   label: string;
   value: number;
-  color: "blue" | "amber";
+  color: "blue" | "amber" | "green" | "gray";
 }) {
-  const bgClass = color === "blue" ? "bg-blue-500" : "bg-amber-500";
+  const barColor = {
+    blue: "bg-blue-500",
+    amber: "bg-amber-500",
+    green: "bg-success",
+    gray: "bg-text-secondary/30",
+  }[color];
+
   return (
     <div className="flex items-center gap-1.5">
-      <span className="text-[9px] text-text-secondary w-7 shrink-0">
+      <span className="text-text-secondary/40 shrink-0">{icon}</span>
+      <span className="text-[8px] text-text-secondary w-6 shrink-0">
         {label}
       </span>
       <div className="flex-1 h-1 bg-bg-secondary rounded-full overflow-hidden">
         <div
-          className={`h-full rounded-full ${bgClass}`}
+          className={`h-full rounded-full transition-all duration-500 ${barColor}`}
           style={{ width: `${Math.min(value, 100)}%` }}
         />
       </div>
-      <span className="text-[9px] text-text-secondary w-5 text-right shrink-0">
+      <span className="text-[8px] text-text-secondary/60 w-4 text-right tabular-nums shrink-0">
         {Math.round(value)}
       </span>
     </div>
