@@ -335,7 +335,7 @@ pub struct TrashResult {
 }
 
 // Shared: move files to trash and clean up DB
-fn trash_files_and_cleanup(
+pub fn trash_files_and_cleanup(
     db_ref: &Arc<Database>,
     files_to_trash: &[(String, String)],
 ) -> Result<TrashResult, String> {

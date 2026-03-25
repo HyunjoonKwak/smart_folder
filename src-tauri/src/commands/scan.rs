@@ -219,33 +219,57 @@ fn make_thumbnail_fast(path: &Path) -> Option<String> {
     Some(base64::engine::general_purpose::STANDARD.encode(&buf))
 }
 
+// Find ffmpeg binary (Tauri app may not have /opt/homebrew/bin in PATH)
+fn find_ffmpeg() -> &'static str {
+    use std::sync::OnceLock;
+    static FFMPEG: OnceLock<String> = OnceLock::new();
+    FFMPEG.get_or_init(|| {
+        let candidates = [
+            "/opt/homebrew/bin/ffmpeg",
+            "/usr/local/bin/ffmpeg",
+            "/usr/bin/ffmpeg",
+        ];
+        for c in &candidates {
+            if Path::new(c).exists() {
+                return c.to_string();
+            }
+        }
+        "ffmpeg".to_string()
+    })
+}
+
 // Video thumbnail: capture frame at 1 second using ffmpeg
 fn make_video_thumbnail(path: &Path) -> Option<String> {
     let unique = uuid::Uuid::new_v4().to_string();
     let tmp = std::env::temp_dir().join(format!("sc_vid_{}.jpg", unique));
+    let path_str = path.to_string_lossy();
 
-    let result = std::process::Command::new("ffmpeg")
+    let output = std::process::Command::new(find_ffmpeg())
         .args([
             "-ss", "1",
-            "-i", path.to_str()?,
-            "-vframes", "1",
+            "-i", &path_str,
+            "-frames:v", "1",
             "-vf", "scale=256:-1",
             "-q:v", "5",
+            "-update", "1",
             "-y",
-            tmp.to_str()?,
         ])
+        .arg(tmp.to_string_lossy().as_ref())
         .stdout(std::process::Stdio::null())
-        .stderr(std::process::Stdio::null())
-        .status()
+        .stderr(std::process::Stdio::piped())
+        .output()
         .ok()?;
 
-    if result.success() {
+    if output.status.success() || tmp.exists() {
         let bytes = std::fs::read(&tmp).ok()?;
         let _ = std::fs::remove_file(&tmp);
         if !bytes.is_empty() {
             use base64::Engine;
             return Some(base64::engine::general_purpose::STANDARD.encode(&bytes));
         }
+    } else {
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        log::warn!("ffmpeg failed for {}: {}", path_str, stderr.lines().last().unwrap_or("unknown"));
     }
     let _ = std::fs::remove_file(&tmp);
     None
@@ -259,25 +283,31 @@ pub async fn generate_thumbnails_for(
 ) -> Result<Vec<(String, String)>, String> {
     let db_ref = db.inner().clone();
 
-    let files: Vec<(String, String)> = db_ref.with_conn(|conn| {
+    let files: Vec<(String, String, String)> = db_ref.with_conn(|conn| {
         let placeholders: Vec<String> = file_ids.iter().enumerate()
             .map(|(i, _)| format!("?{}", i + 1)).collect();
         let query = format!(
-            "SELECT id, file_path FROM media_files WHERE id IN ({}) AND thumbnail IS NULL",
+            "SELECT id, file_path, media_type FROM media_files WHERE id IN ({}) AND thumbnail IS NULL",
             placeholders.join(",")
         );
         let mut stmt = conn.prepare(&query)?;
         let params: Vec<&dyn rusqlite::ToSql> = file_ids.iter()
             .map(|s| s as &dyn rusqlite::ToSql).collect();
         let rows = stmt.query_map(params.as_slice(), |row| {
-            Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?))
+            Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?, row.get::<_, String>(2)?))
         })?.collect::<Result<Vec<_>, _>>()?;
         Ok(rows)
     }).map_err(|e| format!("DB: {}", e))?;
 
     let mut results = Vec::new();
-    for (id, file_path) in &files {
-        if let Some(thumb) = make_thumbnail_fast(Path::new(file_path)) {
+    for (id, file_path, media_type) in &files {
+        let path = Path::new(file_path);
+        let thumb = if media_type == "video" {
+            make_video_thumbnail(path)
+        } else {
+            make_thumbnail_fast(path)
+        };
+        if let Some(thumb) = thumb {
             db_ref.with_conn(|conn| {
                 conn.execute("UPDATE media_files SET thumbnail = ?1 WHERE id = ?2",
                     rusqlite::params![thumb, id])
