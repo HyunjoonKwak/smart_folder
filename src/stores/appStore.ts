@@ -1,5 +1,6 @@
 import { create } from "zustand";
 import type {
+  AppConfig,
   AppView,
   ViewMode,
   MediaStats,
@@ -67,10 +68,14 @@ interface AppState {
   // Theme
   theme: "light" | "dark" | "system";
   setTheme: (theme: "light" | "dark" | "system") => void;
+
+  // Config
+  config: AppConfig | null;
+  setConfig: (config: AppConfig | null) => void;
 }
 
 export const useAppStore = create<AppState>((set) => ({
-  currentView: "gallery",
+  currentView: "dashboard",
   setCurrentView: (view) => set({ currentView: view }),
 
   viewMode: "grid",
@@ -126,4 +131,7 @@ export const useAppStore = create<AppState>((set) => ({
 
   theme: "system",
   setTheme: (theme) => set({ theme }),
+
+  config: null,
+  setConfig: (config) => set({ config }),
 }));

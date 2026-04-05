@@ -1,7 +1,14 @@
 pub mod classifier;
+pub mod config;
 pub mod hasher;
+pub mod mcp;
 pub mod metadata;
 pub mod organizer;
 pub mod quality;
 pub mod scanner;
+pub mod scheduler;
+pub mod sync;
+pub mod trash;
 pub mod undo;
+pub mod volume;
+pub mod watcher;

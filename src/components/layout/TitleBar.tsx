@@ -1,4 +1,6 @@
-import { useState, useRef, useEffect } from "react";
+import { useState, useRef } from "react";
+import { createPortal } from "react-dom";
+import { useTranslation } from "react-i18next";
 import { useAppStore } from "@/stores/appStore";
 import { formatFileSize, formatCount } from "@/utils/format";
 import {
@@ -6,45 +8,20 @@ import {
   Grid3x3,
   List,
   FolderOpen,
+  ScanSearch,
+  RefreshCw,
+  Sparkles,
+  Settings,
   Copy,
   ArrowRightLeft,
-  History,
   FolderTree,
-  Focus,
-  ScanSearch,
-  ChevronDown,
-  Wrench,
+  History,
+  LayoutDashboard,
 } from "lucide-react";
 import type { AppView } from "@/types";
 
-const NAV_ITEMS: Array<{
-  id: AppView;
-  label: string;
-  icon: typeof Grid3x3;
-}> = [
-  { id: "gallery", label: "갤러리", icon: Grid3x3 },
-  { id: "foldertree", label: "폴더", icon: FolderTree },
-  { id: "duplicates", label: "중복 탐지", icon: Copy },
-  { id: "organize", label: "정리", icon: ArrowRightLeft },
-  { id: "history", label: "히스토리", icon: History },
-];
-
-const TOOL_ITEMS: Array<{
-  id: AppView;
-  label: string;
-  desc: string;
-  icon: typeof Grid3x3;
-}> = [
-  { id: "bcut", label: "B컷 자동 탐지", desc: "선명도·노출 분석", icon: Focus },
-  {
-    id: "review",
-    label: "사진 리뷰어",
-    desc: "수동 B컷 마킹",
-    icon: ScanSearch,
-  },
-];
-
 export function TitleBar() {
+  const { t } = useTranslation();
   const currentView = useAppStore((s) => s.currentView);
   const setCurrentView = useAppStore((s) => s.setCurrentView);
   const viewMode = useAppStore((s) => s.viewMode);
@@ -55,33 +32,27 @@ export function TitleBar() {
   const isScanning = useAppStore((s) => s.isScanning);
   const scanProgress = useAppStore((s) => s.scanProgress);
 
-  const [toolsOpen, setToolsOpen] = useState(false);
-  const toolsRef = useRef<HTMLDivElement>(null);
-
-  // Close dropdown on outside click
-  useEffect(() => {
-    const handler = (e: MouseEvent) => {
-      if (toolsRef.current && !toolsRef.current.contains(e.target as Node)) {
-        setToolsOpen(false);
-      }
-    };
-    document.addEventListener("mousedown", handler);
-    return () => document.removeEventListener("mousedown", handler);
-  }, []);
-
-  const activeTool = TOOL_ITEMS.find((t) => t.id === currentView);
-  const isToolView = !!activeTool;
+  const NAV_ITEMS: Array<{ id: AppView; label: string; icon: typeof Grid3x3; tooltip: string }> = [
+    { id: "dashboard", label: t("nav.dashboard"), icon: LayoutDashboard, tooltip: "라이브러리 현황 및 빠른 실행" },
+    { id: "duplicates", label: t("nav.duplicates"), icon: Copy, tooltip: "동일/유사 파일 탐지 및 삭제" },
+    { id: "review", label: t("tools.photoReview"), icon: ScanSearch, tooltip: "수동 검토 + 자동 B컷 분석" },
+    { id: "organize", label: t("nav.organize"), icon: ArrowRightLeft, tooltip: "날짜/유형별 폴더 자동 분류" },
+    { id: "cleanup", label: t("nav.cleanup"), icon: Sparkles, tooltip: "중복→B컷→정리 자동 워크플로우" },
+    { id: "sync", label: t("nav.sync"), icon: RefreshCw, tooltip: "소스→대상 단방향 파일 동기화" },
+    { id: "foldertree", label: t("nav.folder"), icon: FolderTree, tooltip: "폴더 구조, 용량 분석, 비교" },
+    { id: "history", label: t("nav.history"), icon: History, tooltip: "작업 이력 확인 및 되돌리기" },
+  ];
 
   return (
     <header
       className="h-11 bg-bg-secondary/80 backdrop-blur-md border-b border-border flex items-center px-4 gap-2 shrink-0 select-none"
       data-tauri-drag-region
     >
-      {/* Logo */}
-      <div className="flex items-center gap-1.5 mr-1">
+      {/* Logo - click to go home */}
+      <div className="flex items-center gap-1.5 mr-1 cursor-pointer" onClick={() => setCurrentView("dashboard")}>
         <FolderOpen size={16} className="text-accent" />
         <span className="font-semibold text-[13px] text-text-primary tracking-tight">
-          스마트 폴더
+          {t("app.name")}
         </span>
       </div>
 
@@ -91,92 +62,15 @@ export function TitleBar() {
       {/* Main nav */}
       <nav className="flex items-center gap-0.5">
         {NAV_ITEMS.map((item) => (
-          <button
+          <NavButton
             key={item.id}
-            onClick={() => {
-              setCurrentView(item.id);
-              setToolsOpen(false);
-            }}
-            className={`flex items-center gap-1.5 px-2.5 py-1 rounded-md text-[11px] font-medium transition-all ${
-              currentView === item.id
-                ? "bg-accent text-white shadow-sm shadow-accent/25"
-                : "text-text-secondary hover:bg-bg-primary hover:text-text-primary"
-            }`}
-          >
-            <item.icon size={13} />
-            {item.label}
-          </button>
+            icon={item.icon}
+            label={item.label}
+            tooltip={item.tooltip}
+            isActive={currentView === item.id}
+            onClick={() => setCurrentView(item.id)}
+          />
         ))}
-
-        {/* Tools dropdown */}
-        <div ref={toolsRef} className="relative">
-          <button
-            onClick={() => setToolsOpen(!toolsOpen)}
-            className={`flex items-center gap-1 px-2.5 py-1 rounded-md text-[11px] font-medium transition-all ${
-              isToolView
-                ? "bg-accent text-white shadow-sm shadow-accent/25"
-                : "text-text-secondary hover:bg-bg-primary hover:text-text-primary"
-            }`}
-          >
-            {activeTool ? (
-              <>
-                <activeTool.icon size={13} />
-                {activeTool.label}
-              </>
-            ) : (
-              <>
-                <Wrench size={13} />
-                도구
-              </>
-            )}
-            <ChevronDown
-              size={10}
-              className={`transition-transform ${toolsOpen ? "rotate-180" : ""}`}
-            />
-          </button>
-
-          {toolsOpen && (
-            <div className="absolute top-full left-0 mt-1 w-52 bg-bg-elevated border border-border rounded-lg shadow-lg shadow-black/10 overflow-hidden z-50 animate-slide-in">
-              {TOOL_ITEMS.map((item) => (
-                <button
-                  key={item.id}
-                  onClick={() => {
-                    setCurrentView(item.id);
-                    setToolsOpen(false);
-                  }}
-                  className={`w-full flex items-start gap-2.5 px-3 py-2.5 text-left transition-colors ${
-                    currentView === item.id
-                      ? "bg-accent/10"
-                      : "hover:bg-bg-secondary"
-                  }`}
-                >
-                  <item.icon
-                    size={15}
-                    className={
-                      currentView === item.id
-                        ? "text-accent mt-0.5"
-                        : "text-text-secondary mt-0.5"
-                    }
-                  />
-                  <div>
-                    <p
-                      className={`text-[11px] font-medium ${
-                        currentView === item.id
-                          ? "text-accent"
-                          : "text-text-primary"
-                      }`}
-                    >
-                      {item.label}
-                    </p>
-                    <p className="text-[9px] text-text-secondary">
-                      {item.desc}
-                    </p>
-                  </div>
-                </button>
-              ))}
-            </div>
-          )}
-        </div>
       </nav>
 
       {/* Search */}
@@ -188,7 +82,7 @@ export function TitleBar() {
           />
           <input
             type="text"
-            placeholder="검색..."
+            placeholder={t("app.search")}
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
             className="w-full h-7 pl-8 pr-3 rounded-md text-[11px] bg-bg-primary border border-border text-text-primary placeholder:text-text-secondary/50 focus:outline-none focus:ring-1 focus:ring-accent/50 focus:border-accent/50 transition-shadow"
@@ -231,6 +125,18 @@ export function TitleBar() {
         </div>
       )}
 
+      {/* Settings */}
+      <button
+        onClick={() => setCurrentView("settings")}
+        className={`p-1 rounded-md transition-colors ${
+          currentView === "settings"
+            ? "bg-accent text-white"
+            : "text-text-secondary hover:text-text-primary hover:bg-bg-primary"
+        }`}
+      >
+        <Settings size={14} />
+      </button>
+
       {/* Stats */}
       {stats && (
         <div className="text-[10px] text-text-secondary/70 tabular-nums">
@@ -238,5 +144,68 @@ export function TitleBar() {
         </div>
       )}
     </header>
+  );
+}
+
+function NavButton({
+  icon: Icon,
+  label,
+  tooltip,
+  isActive,
+  onClick,
+}: {
+  icon: React.ComponentType<{ size?: number }>;
+  label: string;
+  tooltip: string;
+  isActive: boolean;
+  onClick: () => void;
+}) {
+  const [showTip, setShowTip] = useState(false);
+  const [tipPos, setTipPos] = useState({ x: 0, y: 0 });
+  const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const btnRef = useRef<HTMLButtonElement>(null);
+
+  const handleEnter = () => {
+    timerRef.current = setTimeout(() => {
+      if (btnRef.current) {
+        const rect = btnRef.current.getBoundingClientRect();
+        setTipPos({ x: rect.left + rect.width / 2, y: rect.bottom + 8 });
+        setShowTip(true);
+      }
+    }, 400);
+  };
+
+  const handleLeave = () => {
+    if (timerRef.current) clearTimeout(timerRef.current);
+    setShowTip(false);
+  };
+
+  return (
+    <>
+      <button
+        ref={btnRef}
+        onClick={onClick}
+        onMouseEnter={handleEnter}
+        onMouseLeave={handleLeave}
+        className={`flex items-center gap-1.5 px-2.5 py-1 rounded-md text-[11px] font-medium transition-all ${
+          isActive
+            ? "bg-accent text-white shadow-sm shadow-accent/25"
+            : "text-text-secondary hover:bg-bg-primary hover:text-text-primary active:scale-[0.96]"
+        }`}
+      >
+        <Icon size={13} />
+        {label}
+      </button>
+      {showTip && createPortal(
+        <div
+          className="fixed px-2.5 py-1.5 rounded-md bg-[#1a1a2e] text-white text-[10px] whitespace-nowrap shadow-lg shadow-black/20 pointer-events-none z-[9999] animate-fade-in"
+          style={{ left: tipPos.x, top: tipPos.y, transform: "translateX(-50%)" }}
+        >
+          {tooltip}
+          <div className="absolute bottom-full left-1/2 -translate-x-1/2 border-4 border-transparent border-b-[#1a1a2e]" />
+        </div>,
+        document.body,
+      )}
+    </>
   );
 }

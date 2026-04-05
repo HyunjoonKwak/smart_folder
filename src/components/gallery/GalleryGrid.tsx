@@ -24,6 +24,7 @@ export function GalleryGrid() {
   const mediaFilter = useAppStore((s) => s.mediaFilter);
   const groupBy = useAppStore((s) => s.groupBy);
   const refreshCounter = useAppStore((s) => s.refreshCounter);
+  const searchQuery = useAppStore((s) => s.searchQuery);
   const scanStartTime = useRef<number | null>(null);
 
   // Track scan start time
@@ -58,6 +59,7 @@ export function GalleryGrid() {
       const result = await invoke<MediaListResponse>("get_media_list", {
         folderPath: selectedFolder,
         mediaType: mediaFilter === "all" ? null : mediaFilter,
+        searchQuery: searchQuery || null,
         offset: 0,
         limit: pageSize,
       });
@@ -67,7 +69,7 @@ export function GalleryGrid() {
       // Handle error silently
     }
     setLoading(false);
-  }, [selectedFolder, mediaFilter, refreshCounter, pageSize]);
+  }, [selectedFolder, mediaFilter, searchQuery, refreshCounter, pageSize]);
 
   const loadMore = useCallback(async () => {
     if (files.length >= total || loading) return;
@@ -76,6 +78,7 @@ export function GalleryGrid() {
       const result = await invoke<MediaListResponse>("get_media_list", {
         folderPath: selectedFolder,
         mediaType: mediaFilter === "all" ? null : mediaFilter,
+        searchQuery: searchQuery || null,
         offset: files.length,
         limit: pageSize,
       });
@@ -84,7 +87,7 @@ export function GalleryGrid() {
       // Handle error
     }
     setLoading(false);
-  }, [files.length, total, loading, selectedFolder, mediaFilter, pageSize]);
+  }, [files.length, total, loading, selectedFolder, mediaFilter, searchQuery, pageSize]);
 
   useEffect(() => {
     loadFiles();
@@ -96,6 +99,7 @@ export function GalleryGrid() {
       invoke<MediaListResponse>("get_media_list", {
         folderPath: selectedFolder,
         mediaType: mediaFilter === "all" ? null : mediaFilter,
+        searchQuery: searchQuery || null,
         offset: 0,
         limit: 500,
       }).then((result) => {

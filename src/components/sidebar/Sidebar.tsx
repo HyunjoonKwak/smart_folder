@@ -1,4 +1,6 @@
 import { useState, useEffect, useRef, useCallback } from "react";
+import { createPortal } from "react-dom";
+import { useTranslation } from "react-i18next";
 import { invoke } from "@tauri-apps/api/core";
 import { open } from "@tauri-apps/plugin-dialog";
 import { useAppStore } from "@/stores/appStore";
@@ -9,16 +11,13 @@ import {
   Video,
   Calendar,
   Tag,
-  Copy,
-  Sparkles,
   ChevronRight,
   ChevronDown,
   RefreshCw,
   Trash2,
   RotateCcw,
-  FolderTree,
-  Focus,
-  ScanSearch,
+  FolderHeart,
+  MapPin,
 } from "lucide-react";
 import { formatFileSize } from "@/utils/format";
 
@@ -31,6 +30,7 @@ interface SourceFolder {
 }
 
 export function Sidebar() {
+  const { t } = useTranslation();
   const [folders, setFolders] = useState<SourceFolder[]>([]);
   const selectedFolder = useAppStore((s) => s.selectedFolder);
   const setSelectedFolder = useAppStore((s) => s.setSelectedFolder);
@@ -38,6 +38,9 @@ export function Sidebar() {
   const setStats = useAppStore((s) => s.setStats);
   const stats = useAppStore((s) => s.stats);
   const isScanning = useAppStore((s) => s.isScanning);
+  const currentView = useAppStore((s) => s.currentView);
+  const mediaFilter = useAppStore((s) => s.mediaFilter);
+  const groupBy = useAppStore((s) => s.groupBy);
 
   // Load saved folders on mount
   useEffect(() => {
@@ -207,19 +210,19 @@ export function Sidebar() {
           {isScanning ? (
             <>
               <div className="w-3.5 h-3.5 border-2 border-white border-t-transparent rounded-full animate-spin" />
-              스캔 중...
+              {t("sidebar.scanning")}
             </>
           ) : (
             <>
               <FolderPlus size={14} />
-              폴더 추가
+              {t("sidebar.addFolder")}
             </>
           )}
         </button>
       </div>
 
       <div className="flex-1 overflow-y-auto p-2">
-        <SidebarSection title="소스">
+        <SidebarSection title={t("sidebar.source")}>
           {folders.map((folder) => (
             <SidebarItem
               key={folder.path}
@@ -234,15 +237,16 @@ export function Sidebar() {
           ))}
           {folders.length === 0 && (
             <p className="text-xs text-text-secondary px-2 py-4 text-center">
-              "폴더 추가"를 눌러 사진을 스캔하세요
+              {t("sidebar.emptyHint")}
             </p>
           )}
         </SidebarSection>
 
-        <SidebarSection title="라이브러리">
+        <SidebarSection title={t("sidebar.library")}>
           <SidebarItem
             icon={Image}
-            label="모든 파일"
+            label={t("sidebar.allFiles")}
+            tooltip="전체 미디어 파일 보기"
             count={stats?.total_count}
             onClick={() => {
               setSelectedFolder(null);
@@ -250,11 +254,12 @@ export function Sidebar() {
               useAppStore.getState().setGroupBy("none");
               useAppStore.getState().setCurrentView("gallery");
             }}
-            isActive={selectedFolder === null && useAppStore.getState().mediaFilter === "all" && useAppStore.getState().groupBy === "none"}
+            isActive={currentView === "gallery" && selectedFolder === null && mediaFilter === "all" && groupBy === "none"}
           />
           <SidebarItem
             icon={Image}
-            label="사진만"
+            label={t("sidebar.imagesOnly")}
+            tooltip="사진 파일만 필터링"
             count={stats?.image_count}
             onClick={() => {
               setSelectedFolder(null);
@@ -262,11 +267,12 @@ export function Sidebar() {
               useAppStore.getState().setGroupBy("none");
               useAppStore.getState().setCurrentView("gallery");
             }}
-            isActive={useAppStore.getState().mediaFilter === "image"}
+            isActive={currentView === "gallery" && mediaFilter === "image"}
           />
           <SidebarItem
             icon={Video}
-            label="영상만"
+            label={t("sidebar.videosOnly")}
+            tooltip="영상 파일만 필터링"
             count={stats?.video_count}
             onClick={() => {
               setSelectedFolder(null);
@@ -274,51 +280,44 @@ export function Sidebar() {
               useAppStore.getState().setGroupBy("none");
               useAppStore.getState().setCurrentView("gallery");
             }}
-            isActive={useAppStore.getState().mediaFilter === "video"}
+            isActive={currentView === "gallery" && mediaFilter === "video"}
           />
           <DateGroupList />
           <FolderGroupList />
-          <SidebarItem icon={Tag} label="태그별 (준비 중)" />
+          <SidebarItem
+            icon={Tag}
+            label={t("sidebar.tags")}
+            tooltip={t("sidebar.tagsTip")}
+            onClick={() => useAppStore.getState().setCurrentView("tags")}
+            isActive={currentView === "tags"}
+          />
+          <SidebarItem
+            icon={FolderHeart}
+            label={t("sidebar.albums")}
+            tooltip={t("sidebar.albumsTip")}
+            onClick={() => useAppStore.getState().setCurrentView("albums")}
+            isActive={currentView === "albums"}
+          />
+          <SidebarItem
+            icon={MapPin}
+            label={t("sidebar.map")}
+            tooltip={t("sidebar.mapTip")}
+            onClick={() => useAppStore.getState().setCurrentView("map")}
+            isActive={currentView === "map"}
+          />
         </SidebarSection>
 
-        <SidebarSection title="도구">
-          <SidebarItem
-            icon={Copy}
-            label="중복 탐지"
-            onClick={() => useAppStore.getState().setCurrentView("duplicates")}
-          />
-          <SidebarItem
-            icon={Sparkles}
-            label="AI 분류"
-            onClick={() => useAppStore.getState().setCurrentView("organize")}
-          />
-          <SidebarItem
-            icon={Focus}
-            label="B컷 정리"
-            onClick={() => useAppStore.getState().setCurrentView("bcut")}
-          />
-          <SidebarItem
-            icon={ScanSearch}
-            label="사진 리뷰"
-            onClick={() => useAppStore.getState().setCurrentView("review")}
-          />
-          <SidebarItem
-            icon={FolderTree}
-            label="폴더 탐색"
-            onClick={() => useAppStore.getState().setCurrentView("foldertree")}
-          />
-        </SidebarSection>
       </div>
 
       <div className="p-3 border-t border-border text-xs text-text-secondary">
         {stats && stats.total_count > 0 ? (
           <>
             <div className="flex justify-between">
-              <span>전체</span>
-              <span>{stats.total_count}개 파일</span>
+              <span>{t("sidebar.total")}</span>
+              <span>{stats.total_count} {t("sidebar.files")}</span>
             </div>
             <div className="flex justify-between mt-1">
-              <span>용량</span>
+              <span>{t("sidebar.capacity")}</span>
               <span>{formatFileSize(stats.total_size)}</span>
             </div>
             <button
@@ -326,11 +325,11 @@ export function Sidebar() {
               className="w-full flex items-center justify-center gap-1.5 mt-2 px-2 py-1.5 rounded text-[10px] text-danger hover:bg-danger/10 transition-colors"
             >
               <RotateCcw size={10} />
-              라이브러리 초기화
+              {t("sidebar.resetLibrary")}
             </button>
           </>
         ) : (
-          <p className="text-center text-[10px] py-1">라이브러리가 비어있습니다</p>
+          <p className="text-center text-[10px] py-1">{t("sidebar.libraryEmpty")}</p>
         )}
         <p className="text-center text-[9px] text-text-secondary/50 mt-2">
           v{__APP_VERSION__}
@@ -366,6 +365,7 @@ function SidebarSection({
 function SidebarItem({
   icon: Icon,
   label,
+  tooltip,
   count,
   isActive,
   onClick,
@@ -375,6 +375,7 @@ function SidebarItem({
 }: {
   icon: React.ComponentType<{ size?: number }>;
   label: string;
+  tooltip?: string;
   count?: number;
   isActive?: boolean;
   onClick?: () => void;
@@ -382,43 +383,79 @@ function SidebarItem({
   contextIcon?: React.ComponentType<{ size?: number }>;
   onRemove?: () => void;
 }) {
+  const [showTip, setShowTip] = useState(false);
+  const [tipPos, setTipPos] = useState({ x: 0, y: 0 });
+  const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const btnRef = useRef<HTMLButtonElement>(null);
+
+  const handleEnter = () => {
+    if (!tooltip) return;
+    timerRef.current = setTimeout(() => {
+      if (btnRef.current) {
+        const rect = btnRef.current.getBoundingClientRect();
+        setTipPos({ x: rect.right + 8, y: rect.top + rect.height / 2 });
+        setShowTip(true);
+      }
+    }, 400);
+  };
+
+  const handleLeave = () => {
+    if (timerRef.current) clearTimeout(timerRef.current);
+    setShowTip(false);
+  };
+
   return (
-    <button
-      onClick={onClick}
-      className={`w-full flex items-center gap-2 px-2 py-1.5 rounded-md text-xs group transition-colors ${
-        isActive
-          ? "bg-accent/10 text-accent"
-          : "text-text-secondary hover:bg-bg-primary hover:text-text-primary"
-      }`}
-    >
-      <Icon size={14} />
-      <span className="flex-1 text-left truncate">{label}</span>
-      {count !== undefined && (
-        <span className="text-text-secondary">{count}</span>
-      )}
-      {ContextIcon && onContextAction && (
-        <span
-          onClick={(e) => {
-            e.stopPropagation();
-            onContextAction();
-          }}
-          className="opacity-0 group-hover:opacity-100 hover:text-accent"
+    <>
+      <button
+        ref={btnRef}
+        onClick={onClick}
+        onMouseEnter={handleEnter}
+        onMouseLeave={handleLeave}
+        className={`w-full flex items-center gap-2 px-2 py-1.5 rounded-md text-xs group transition-all duration-150 ${
+          isActive
+            ? "bg-accent/15 text-accent font-semibold shadow-sm shadow-accent/10"
+            : "text-text-secondary hover:bg-bg-primary hover:text-text-primary active:scale-[0.97] active:bg-accent/10"
+        }`}
+      >
+        <Icon size={14} />
+        <span className="flex-1 text-left truncate">{label}</span>
+        {count !== undefined && (
+          <span className="text-text-secondary">{count}</span>
+        )}
+        {ContextIcon && onContextAction && (
+          <span
+            onClick={(e) => {
+              e.stopPropagation();
+              onContextAction();
+            }}
+            className="opacity-0 group-hover:opacity-100 hover:text-accent"
+          >
+            <ContextIcon size={12} />
+          </span>
+        )}
+        {onRemove && (
+          <span
+            onClick={(e) => {
+              e.stopPropagation();
+              onRemove();
+            }}
+            className="opacity-0 group-hover:opacity-100 hover:text-danger"
+          >
+            <Trash2 size={12} />
+          </span>
+        )}
+      </button>
+      {showTip && tooltip && createPortal(
+        <div
+          className="fixed px-2.5 py-1.5 rounded-md bg-[#1a1a2e] text-white text-[10px] whitespace-nowrap shadow-lg shadow-black/20 pointer-events-none z-[9999] animate-fade-in"
+          style={{ left: tipPos.x, top: tipPos.y, transform: "translateY(-50%)" }}
         >
-          <ContextIcon size={12} />
-        </span>
+          {tooltip}
+          <div className="absolute right-full top-1/2 -translate-y-1/2 border-4 border-transparent border-r-[#1a1a2e]" />
+        </div>,
+        document.body
       )}
-      {onRemove && (
-        <span
-          onClick={(e) => {
-            e.stopPropagation();
-            onRemove();
-          }}
-          className="opacity-0 group-hover:opacity-100 hover:text-danger"
-        >
-          <Trash2 size={12} />
-        </span>
-      )}
-    </button>
+    </>
   );
 }
 
@@ -428,6 +465,7 @@ interface GroupInfo {
 }
 
 function DateGroupList() {
+  const { t } = useTranslation();
   const [isOpen, setIsOpen] = useState(false);
   const [dates, setDates] = useState<GroupInfo[]>([]);
   const dateFilter = useAppStore((s) => s.dateFilter);
@@ -471,8 +509,8 @@ function DateGroupList() {
       >
         {isOpen ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
         <Calendar size={14} />
-        <span className="flex-1 text-left">날짜별</span>
-        {dates.length > 0 && <span className="text-[10px] text-text-secondary">{dates.length}일</span>}
+        <span className="flex-1 text-left">{t("sidebar.byDate")}</span>
+        {dates.length > 0 && <span className="text-[10px] text-text-secondary">{dates.length}</span>}
       </button>
       {isOpen && (
         <div className="ml-5 mt-0.5 max-h-48 overflow-y-auto space-y-0.5">
@@ -480,7 +518,7 @@ function DateGroupList() {
             onClick={handleShowAll}
             className="w-full text-left px-2 py-1 rounded text-[10px] text-accent hover:bg-accent/10"
           >
-            전체 날짜별 보기
+            {t("sidebar.showAllDates")}
           </button>
           {dates.map((d) => (
             <button
@@ -559,6 +597,7 @@ function buildFolderTree(folders: GroupInfo[]): FolderNode[] {
 }
 
 function FolderGroupList() {
+  const { t } = useTranslation();
   const [isOpen, setIsOpen] = useState(false);
   const [tree, setTree] = useState<FolderNode[]>([]);
   const [rawCount, setRawCount] = useState(0);
@@ -584,8 +623,8 @@ function FolderGroupList() {
       >
         {isOpen ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
         <FolderOpen size={14} />
-        <span className="flex-1 text-left">폴더별</span>
-        {rawCount > 0 && <span className="text-[10px] text-text-secondary">{rawCount}곳</span>}
+        <span className="flex-1 text-left">{t("sidebar.byFolder")}</span>
+        {rawCount > 0 && <span className="text-[10px] text-text-secondary">{rawCount}</span>}
       </button>
       {isOpen && (
         <div className="ml-3 mt-0.5 max-h-64 overflow-y-auto">

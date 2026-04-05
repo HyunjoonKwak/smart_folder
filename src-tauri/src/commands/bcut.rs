@@ -5,7 +5,7 @@ use rusqlite::params;
 use serde::{Deserialize, Serialize};
 use std::path::Path;
 use std::sync::Arc;
-use tauri::{AppHandle, Emitter, Manager, State};
+use tauri::{AppHandle, Emitter, State};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct BcutProgress {
@@ -316,10 +316,40 @@ pub async fn dismiss_bcut_group(
         .map_err(|e| format!("DB: {}", e))
 }
 
+// Dry-run preview: list B-cut files that would be trashed
+#[tauri::command]
+pub async fn preview_trash_bcuts(
+    db: State<'_, Arc<Database>>,
+) -> Result<Vec<super::duplicate::DryRunItem>, String> {
+    let db_ref = db.inner().clone();
+    db_ref
+        .with_conn(|conn| {
+            let mut stmt = conn.prepare(
+                "SELECT bm.media_id, mf.file_path, mf.file_name, mf.file_size
+                 FROM bcut_members bm
+                 JOIN bcut_groups bg ON bm.group_id = bg.id
+                 JOIN media_files mf ON bm.media_id = mf.id
+                 WHERE bg.status = 'pending' AND bm.is_best = 0",
+            )?;
+            let rows = stmt
+                .query_map([], |row| {
+                    Ok(super::duplicate::DryRunItem {
+                        media_id: row.get(0)?,
+                        file_path: row.get(1)?,
+                        file_name: row.get(2)?,
+                        file_size: row.get(3)?,
+                    })
+                })?
+                .collect::<Result<Vec<_>, _>>()?;
+            Ok(rows)
+        })
+        .map_err(|e| format!("DB: {}", e))
+}
+
 #[tauri::command]
 pub async fn trash_bcut_files(
     db: State<'_, Arc<Database>>,
-) -> Result<super::duplicate::TrashResult, String> {
+) -> Result<crate::core::trash::TrashResult, String> {
     let db_ref = db.inner().clone();
 
     let files_to_trash: Vec<(String, String)> = db_ref
@@ -338,28 +368,7 @@ pub async fn trash_bcut_files(
         })
         .map_err(|e| format!("DB: {}", e))?;
 
-    let result = super::duplicate::trash_files_and_cleanup(&db_ref, &files_to_trash)?;
-
-    // Resolve groups with <= 1 member
-    db_ref
-        .with_conn(|conn| {
-            conn.execute(
-                "UPDATE bcut_groups SET status = 'resolved'
-                 WHERE id IN (
-                   SELECT bg.id FROM bcut_groups bg
-                   LEFT JOIN bcut_members bm ON bg.id = bm.group_id
-                   JOIN media_files mf ON bm.media_id = mf.id
-                   WHERE bg.status = 'pending'
-                   GROUP BY bg.id
-                   HAVING COUNT(bm.media_id) <= 1
-                 )",
-                [],
-            )?;
-            Ok(())
-        })
-        .map_err(|e| format!("DB: {}", e))?;
-
-    Ok(result)
+    crate::core::trash::trash_and_cleanup_db(&db_ref, &files_to_trash)
 }
 
 // Quick quality score for a batch of media IDs (for photo reviewer)
@@ -398,7 +407,7 @@ pub async fn compute_quality_scores(
 
     let scores: Vec<QuickScore> = files
         .par_iter()
-        .filter_map(|(id, path, w, h, size)| {
+        .filter_map(|(id, path, _w, _h, _size)| {
             let p = Path::new(path);
             if !p.exists() { return None; }
             let sharpness = quality::compute_sharpness(p).unwrap_or(0.0);

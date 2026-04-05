@@ -145,6 +145,78 @@ pub fn run(conn: &Connection) -> Result<(), rusqlite::Error> {
         CREATE INDEX IF NOT EXISTS idx_undo_batch ON undo_journal(batch_id);
         CREATE INDEX IF NOT EXISTS idx_media_type ON media_files(media_type);
 
+        -- Watch activity log (Phase 1C)
+        CREATE TABLE IF NOT EXISTS watch_activity_log (
+            id TEXT PRIMARY KEY,
+            folder_path TEXT NOT NULL,
+            event_type TEXT NOT NULL,
+            file_path TEXT,
+            detected_at TEXT NOT NULL,
+            processed INTEGER NOT NULL DEFAULT 0
+        );
+        CREATE INDEX IF NOT EXISTS idx_watch_activity ON watch_activity_log(detected_at DESC);
+
+        -- Schedules (Phase 1D)
+        CREATE TABLE IF NOT EXISTS schedules (
+            id TEXT PRIMARY KEY,
+            name TEXT NOT NULL,
+            cron_expression TEXT NOT NULL,
+            task_type TEXT NOT NULL,
+            task_params_json TEXT,
+            enabled INTEGER NOT NULL DEFAULT 1,
+            last_run_at TEXT,
+            next_run_at TEXT,
+            created_at TEXT NOT NULL
+        );
+
+        CREATE TABLE IF NOT EXISTS schedule_runs (
+            id TEXT PRIMARY KEY,
+            schedule_id TEXT NOT NULL REFERENCES schedules(id) ON DELETE CASCADE,
+            started_at TEXT NOT NULL,
+            finished_at TEXT,
+            status TEXT NOT NULL DEFAULT 'running',
+            result_json TEXT
+        );
+        CREATE INDEX IF NOT EXISTS idx_schedule_runs ON schedule_runs(schedule_id, started_at DESC);
+
+        -- Sync history (Phase 2A)
+        CREATE TABLE IF NOT EXISTS sync_history (
+            id TEXT PRIMARY KEY,
+            preset_id TEXT,
+            source_dir TEXT NOT NULL,
+            target_dir TEXT NOT NULL,
+            started_at TEXT NOT NULL,
+            finished_at TEXT,
+            files_copied INTEGER NOT NULL DEFAULT 0,
+            files_updated INTEGER NOT NULL DEFAULT 0,
+            files_skipped INTEGER NOT NULL DEFAULT 0,
+            bytes_transferred INTEGER NOT NULL DEFAULT 0,
+            status TEXT NOT NULL DEFAULT 'running',
+            error_message TEXT
+        );
+        CREATE INDEX IF NOT EXISTS idx_sync_history ON sync_history(started_at DESC);
+
+        CREATE TABLE IF NOT EXISTS sync_file_checksums (
+            id TEXT PRIMARY KEY,
+            sync_history_id TEXT,
+            file_path TEXT NOT NULL,
+            xxhash64 TEXT NOT NULL,
+            file_size INTEGER NOT NULL,
+            modified_at TEXT NOT NULL,
+            synced_at TEXT NOT NULL
+        );
+        CREATE INDEX IF NOT EXISTS idx_sync_checksum_path ON sync_file_checksums(file_path);
+
+        -- Known devices (Phase 2C)
+        CREATE TABLE IF NOT EXISTS known_devices (
+            uuid TEXT PRIMARY KEY,
+            label TEXT NOT NULL,
+            last_mount_point TEXT,
+            associated_source_folder TEXT,
+            first_seen_at TEXT NOT NULL,
+            last_seen_at TEXT NOT NULL
+        );
+
         -- Migration: add columns if missing (for existing DBs)
         -- SQLite doesn't support IF NOT EXISTS for ALTER TABLE, so we ignore errors
         ",

@@ -108,7 +108,7 @@ pub async fn preview_organize(
     let mut moves = Vec::new();
     let mut folders: std::collections::HashSet<String> = std::collections::HashSet::new();
 
-    for (_id, file_path, file_name, file_size, _media_type, date_taken, _camera, modified_at, created_at) in
+    for (_id, file_path, file_name, file_size, _media_type, date_taken, _camera, modified_at, _created_at) in
         &files_with_exif
     {
         // Use EXIF date first, fallback to file modified/created date

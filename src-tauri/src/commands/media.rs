@@ -1,5 +1,6 @@
 use std::sync::Arc;
 
+use rusqlite::params;
 use serde::{Deserialize, Serialize};
 use tauri::State;
 
@@ -26,6 +27,7 @@ pub async fn get_media_list(
     db: State<'_, Arc<Database>>,
     folder_path: Option<String>,
     media_type: Option<String>,
+    search_query: Option<String>,
     offset: Option<i64>,
     limit: Option<i64>,
 ) -> Result<MediaListResponse, String> {
@@ -33,11 +35,12 @@ pub async fn get_media_list(
     let limit = limit.unwrap_or(500);
     let folder = folder_path.as_deref();
     let mtype = media_type.as_deref();
+    let sq = search_query.as_deref();
 
     let db_ref = db.inner().clone();
     db_ref
         .with_conn(|conn| {
-            let files = queries::get_media_files(conn, folder, mtype, offset, limit)?;
+            let files = queries::get_media_files_with_search(conn, folder, mtype, sq, offset, limit)?;
             let (total, total_size) = queries::get_media_stats(conn)?;
             Ok(MediaListResponse {
                 files,
@@ -200,4 +203,89 @@ pub async fn get_thumbnail(
             Ok(result)
         })
         .map_err(|e| format!("DB error: {}", e))
+}
+
+// Search media by filename, path, or camera model
+#[tauri::command]
+pub async fn search_media(
+    db: State<'_, Arc<Database>>,
+    query: String,
+    limit: Option<i64>,
+) -> Result<Vec<MediaFile>, String> {
+    let db_ref = db.inner().clone();
+    let limit = limit.unwrap_or(100);
+    let pattern = format!("%{}%", query);
+
+    db_ref
+        .with_conn(|conn| {
+            let mut stmt = conn.prepare(
+                "SELECT mf.id, mf.file_path, mf.original_path, mf.file_name, mf.file_size, mf.mime_type,
+                        mf.sha256_hash, mf.quick_hash, mf.width, mf.height, mf.media_type,
+                        mf.created_at, mf.modified_at, mf.scanned_at, mf.source_type, mf.thumbnail, mf.scan_phase,
+                        me.date_taken
+                 FROM media_files mf
+                 LEFT JOIN media_exif me ON mf.id = me.media_id
+                 WHERE mf.file_name LIKE ?1 OR mf.file_path LIKE ?1
+                    OR me.camera_model LIKE ?1 OR me.camera_make LIKE ?1
+                 ORDER BY COALESCE(me.date_taken, mf.modified_at) DESC
+                 LIMIT ?2",
+            )?;
+            let rows = stmt
+                .query_map(params![pattern, limit], |row| {
+                    Ok(MediaFile {
+                        id: row.get(0)?, file_path: row.get(1)?, original_path: row.get(2)?,
+                        file_name: row.get(3)?, file_size: row.get(4)?, mime_type: row.get(5)?,
+                        sha256_hash: row.get(6)?, quick_hash: row.get(7)?,
+                        width: row.get(8)?, height: row.get(9)?, media_type: row.get(10)?,
+                        created_at: row.get(11)?, modified_at: row.get(12)?,
+                        scanned_at: row.get(13)?, source_type: row.get(14)?,
+                        thumbnail: row.get(15)?, scan_phase: row.get(16)?, date_taken: row.get(17)?,
+                    })
+                })?
+                .collect::<Result<Vec<_>, _>>()?;
+            Ok(rows)
+        })
+        .map_err(|e| format!("DB: {}", e))
+}
+
+// Get media with GPS coordinates
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct GpsMediaItem {
+    pub media_id: String,
+    pub file_name: String,
+    pub thumbnail: Option<String>,
+    pub latitude: f64,
+    pub longitude: f64,
+    pub date_taken: Option<String>,
+}
+
+#[tauri::command]
+pub async fn get_gps_media(
+    db: State<'_, Arc<Database>>,
+    limit: Option<i64>,
+) -> Result<Vec<GpsMediaItem>, String> {
+    let db_ref = db.inner().clone();
+    let limit = limit.unwrap_or(1000);
+
+    db_ref
+        .with_conn(|conn| {
+            let mut stmt = conn.prepare(
+                "SELECT mf.id, mf.file_name, mf.thumbnail, me.gps_latitude, me.gps_longitude, me.date_taken
+                 FROM media_files mf
+                 JOIN media_exif me ON mf.id = me.media_id
+                 WHERE me.gps_latitude IS NOT NULL AND me.gps_longitude IS NOT NULL
+                 ORDER BY me.date_taken DESC
+                 LIMIT ?1",
+            )?;
+            let rows = stmt
+                .query_map(params![limit], |row| {
+                    Ok(GpsMediaItem {
+                        media_id: row.get(0)?, file_name: row.get(1)?, thumbnail: row.get(2)?,
+                        latitude: row.get(3)?, longitude: row.get(4)?, date_taken: row.get(5)?,
+                    })
+                })?
+                .collect::<Result<Vec<_>, _>>()?;
+            Ok(rows)
+        })
+        .map_err(|e| format!("DB: {}", e))
 }

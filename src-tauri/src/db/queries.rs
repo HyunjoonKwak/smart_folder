@@ -145,6 +145,17 @@ pub fn get_media_files(
     offset: i64,
     limit: i64,
 ) -> Result<Vec<MediaFile>, rusqlite::Error> {
+    get_media_files_with_search(conn, folder_path, media_type, None, offset, limit)
+}
+
+pub fn get_media_files_with_search(
+    conn: &Connection,
+    folder_path: Option<&str>,
+    media_type: Option<&str>,
+    search_query: Option<&str>,
+    offset: i64,
+    limit: i64,
+) -> Result<Vec<MediaFile>, rusqlite::Error> {
     let map_row = |row: &rusqlite::Row| -> Result<MediaFile, rusqlite::Error> {
         Ok(MediaFile {
             id: row.get(0)?, file_path: row.get(1)?, original_path: row.get(2)?,
@@ -176,6 +187,16 @@ pub fn get_media_files(
         if mtype != "all" {
             conditions.push(format!("mf.media_type = ?{}", param_values.len() + 1));
             param_values.push(Box::new(mtype.to_string()));
+        }
+    }
+    if let Some(sq) = search_query {
+        if !sq.is_empty() {
+            let pattern = format!("%{}%", sq);
+            let idx = param_values.len() + 1;
+            conditions.push(format!(
+                "(mf.file_name LIKE ?{idx} OR mf.file_path LIKE ?{idx})"
+            ));
+            param_values.push(Box::new(pattern));
         }
     }
 

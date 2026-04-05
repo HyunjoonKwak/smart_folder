@@ -38,6 +38,16 @@ kamadak-exif = "0.5"
 
 # Hashing
 sha2 = "0.10"
+xxhash-rust = { version = "0.8", features = ["xxh64"] }
+
+# Configuration
+serde_yaml = "0.9"
+
+# Scheduling
+tokio-cron-scheduler = "0.13"
+
+# Pattern matching
+glob = "0.3"
 
 # Parallelism
 rayon = "1.10"

@@ -1,8 +1,8 @@
 use rayon::prelude::*;
-use sha2::{Digest, Sha256};
 use std::fs::File;
 use std::io::{BufReader, Read};
 use std::path::Path;
+use xxhash_rust::xxh64::xxh64;
 
 const QUICK_HASH_SIZE: usize = 4096;
 
@@ -13,26 +13,30 @@ pub fn quick_hash(path: &Path) -> Option<String> {
     let bytes_read = reader.read(&mut buffer).ok()?;
     buffer.truncate(bytes_read);
 
-    let mut hasher = Sha256::new();
-    hasher.update(&buffer);
-    Some(format!("{:x}", hasher.finalize()))
+    let hash = xxh64(&buffer, 0);
+    Some(format!("{:016x}", hash))
 }
 
-pub fn full_hash(path: &Path) -> Option<String> {
+/// Hash an entire file with xxHash64 (for sync checksum verification)
+pub fn xxhash_file(path: &Path) -> Option<String> {
     let file = File::open(path).ok()?;
     let mut reader = BufReader::new(file);
-    let mut hasher = Sha256::new();
-    let mut buffer = [0u8; 8192];
+    let mut buffer = [0u8; 65536];
+    let mut seed_hash: u64 = 0;
 
     loop {
         let bytes_read = reader.read(&mut buffer).ok()?;
         if bytes_read == 0 {
             break;
         }
-        hasher.update(&buffer[..bytes_read]);
+        seed_hash = xxh64(&buffer[..bytes_read], seed_hash);
     }
 
-    Some(format!("{:x}", hasher.finalize()))
+    Some(format!("{:016x}", seed_hash))
+}
+
+pub fn full_hash(path: &Path) -> Option<String> {
+    xxhash_file(path)
 }
 
 // Simple perceptual hash implementation using average hash algorithm

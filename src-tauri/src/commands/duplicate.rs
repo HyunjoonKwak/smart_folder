@@ -204,17 +204,82 @@ pub async fn detect_duplicates(
         }).ok();
     }
 
+    // Phase 4: Similar image detection via perceptual hash
+    app.emit("duplicate-progress", DuplicateProgress {
+        phase: "유사 이미지 분석".into(),
+        total: total_files as usize,
+        current: 0,
+        detail: "퍼셉추얼 해시 비교 중...".into(),
+    }).ok();
+
+    let phash_files: Vec<(String, Vec<u8>)> = db_ref.with_conn(|conn| {
+        let mut stmt = conn.prepare(
+            "SELECT id, phash FROM media_files WHERE phash IS NOT NULL AND scan_phase >= 1"
+        )?;
+        let rows = stmt.query_map([], |row| {
+            Ok((row.get::<_, String>(0)?, row.get::<_, Vec<u8>>(1)?))
+        })?.collect::<Result<Vec<_>, _>>()?;
+        Ok(rows)
+    }).map_err(|e| format!("DB: {}", e))?;
+
+    // Compare all pairs (O(n^2) but with early exit for already-matched IDs)
+    let mut similar_groups_count = 0usize;
+    let mut matched_ids: std::collections::HashSet<String> = std::collections::HashSet::new();
+
+    for i in 0..phash_files.len() {
+        if matched_ids.contains(&phash_files[i].0) { continue; }
+        let mut group_members = vec![phash_files[i].0.clone()];
+
+        for j in (i + 1)..phash_files.len() {
+            if matched_ids.contains(&phash_files[j].0) { continue; }
+            let dist = hasher::hamming_distance(&phash_files[i].1, &phash_files[j].1);
+            if dist <= 10 && dist > 0 {
+                group_members.push(phash_files[j].0.clone());
+            }
+        }
+
+        if group_members.len() >= 2 {
+            let group_id = uuid::Uuid::new_v4().to_string();
+            let sim_score = 1.0_f64;
+            db_ref.with_conn(|conn| {
+                conn.execute(
+                    "INSERT INTO duplicate_groups (id, match_type, similarity_score, status) VALUES (?1, 'similar', ?2, 'pending')",
+                    params![group_id, sim_score],
+                )?;
+                for (j, id) in group_members.iter().enumerate() {
+                    conn.execute(
+                        "INSERT OR IGNORE INTO duplicate_members (group_id, media_id, is_preferred) VALUES (?1, ?2, ?3)",
+                        params![group_id, id, if j == 0 { 1 } else { 0 }],
+                    )?;
+                    matched_ids.insert(id.clone());
+                }
+                Ok(())
+            }).map_err(|e| format!("DB: {}", e))?;
+
+            similar_groups_count += 1;
+        }
+
+        if i % 50 == 0 {
+            app.emit("duplicate-progress", DuplicateProgress {
+                phase: "유사 이미지 분석".into(),
+                total: phash_files.len(),
+                current: i,
+                detail: format!("{}개 비교 중... 유사 {}그룹 발견", i, similar_groups_count),
+            }).ok();
+        }
+    }
+
     app.emit("duplicate-progress", DuplicateProgress {
         phase: "complete".into(),
         total: total_files as usize,
         current: total_files as usize,
         detail: format!(
-            "완료: 전체 {}개 파일 중 {}그룹 {}개 중복 발견",
-            total_files, exact_groups, total_duplicates
+            "완료: 전체 {}개 파일 중 정확 {}그룹, 유사 {}그룹, {}개 중복 발견",
+            total_files, exact_groups, similar_groups_count, total_duplicates
         ),
     }).ok();
 
-    Ok(DuplicateScanResult { exact_groups, similar_groups: 0, total_duplicates, space_savings })
+    Ok(DuplicateScanResult { exact_groups, similar_groups: similar_groups_count, total_duplicates, space_savings })
 }
 
 // Fast: no thumbnail generation, just DB query
@@ -326,82 +391,49 @@ pub async fn dismiss_duplicate_group(
         .map_err(|e| format!("DB: {}", e))
 }
 
-// Trash result
+// Dry-run preview: list files that would be trashed without executing
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct TrashResult {
-    pub success: usize,
-    pub failed: usize,
-    pub errors: Vec<String>,
+pub struct DryRunItem {
+    pub media_id: String,
+    pub file_path: String,
+    pub file_name: String,
+    pub file_size: i64,
 }
 
-// Shared: move files to trash and clean up DB
-pub fn trash_files_and_cleanup(
-    db_ref: &Arc<Database>,
-    files_to_trash: &[(String, String)],
-) -> Result<TrashResult, String> {
-    let mut success = 0usize;
-    let mut failed = 0usize;
-    let mut errors = Vec::new();
-    let mut trashed_ids = Vec::new();
-
-    for (media_id, file_path) in files_to_trash {
-        let result = std::process::Command::new("osascript")
-            .arg("-e")
-            .arg(format!(
-                "tell application \"Finder\" to delete POSIX file \"{}\"",
-                file_path
-            ))
-            .output();
-
-        match result {
-            Ok(output) if output.status.success() => {
-                success += 1;
-                trashed_ids.push(media_id.clone());
-            }
-            _ => {
-                failed += 1;
-                let fname = Path::new(file_path)
-                    .file_name()
-                    .map(|n| n.to_string_lossy().into_owned())
-                    .unwrap_or_else(|| file_path.clone());
-                errors.push(fname);
-            }
-        }
-    }
-
-    if !trashed_ids.is_empty() {
-        db_ref
-            .with_conn(|conn| {
-                let tx = conn.unchecked_transaction()?;
-                for id in &trashed_ids {
-                    tx.execute("DELETE FROM media_files WHERE id = ?1", params![id])?;
-                    tx.execute("DELETE FROM duplicate_members WHERE media_id = ?1", params![id])?;
-                }
-                // Resolve groups with 0-1 members left
-                tx.execute(
-                    "UPDATE duplicate_groups SET status = 'resolved'
-                     WHERE id IN (
-                       SELECT dg.id FROM duplicate_groups dg
-                       LEFT JOIN duplicate_members dm ON dg.id = dm.group_id
-                       WHERE dg.status = 'pending'
-                       GROUP BY dg.id
-                       HAVING COUNT(dm.media_id) <= 1
-                     )",
-                    [],
-                )?;
-                tx.commit()
-            })
-            .map_err(|e| format!("DB: {}", e))?;
-    }
-
-    Ok(TrashResult { success, failed, errors })
+#[tauri::command]
+pub async fn preview_trash_duplicates(
+    db: State<'_, Arc<Database>>,
+) -> Result<Vec<DryRunItem>, String> {
+    let db_ref = db.inner().clone();
+    db_ref
+        .with_conn(|conn| {
+            let mut stmt = conn.prepare(
+                "SELECT dm.media_id, mf.file_path, mf.file_name, mf.file_size
+                 FROM duplicate_members dm
+                 JOIN duplicate_groups dg ON dm.group_id = dg.id
+                 JOIN media_files mf ON dm.media_id = mf.id
+                 WHERE dg.status = 'pending' AND dm.is_preferred = 0",
+            )?;
+            let rows = stmt
+                .query_map([], |row| {
+                    Ok(DryRunItem {
+                        media_id: row.get(0)?,
+                        file_path: row.get(1)?,
+                        file_name: row.get(2)?,
+                        file_size: row.get(3)?,
+                    })
+                })?
+                .collect::<Result<Vec<_>, _>>()?;
+            Ok(rows)
+        })
+        .map_err(|e| format!("DB: {}", e))
 }
 
 // Trash all non-preferred duplicate files across all pending groups
 #[tauri::command]
 pub async fn trash_duplicate_files(
     db: State<'_, Arc<Database>>,
-) -> Result<TrashResult, String> {
+) -> Result<crate::core::trash::TrashResult, String> {
     let db_ref = db.inner().clone();
 
     let files_to_trash: Vec<(String, String)> = db_ref
@@ -420,7 +452,7 @@ pub async fn trash_duplicate_files(
         })
         .map_err(|e| format!("DB: {}", e))?;
 
-    trash_files_and_cleanup(&db_ref, &files_to_trash)
+    crate::core::trash::trash_and_cleanup_db(&db_ref, &files_to_trash)
 }
 
 // Trash non-preferred files in a single group
@@ -428,7 +460,7 @@ pub async fn trash_duplicate_files(
 pub async fn trash_group_duplicates(
     db: State<'_, Arc<Database>>,
     group_id: String,
-) -> Result<TrashResult, String> {
+) -> Result<crate::core::trash::TrashResult, String> {
     let db_ref = db.inner().clone();
 
     let files_to_trash: Vec<(String, String)> = db_ref
@@ -448,7 +480,7 @@ pub async fn trash_group_duplicates(
         })
         .map_err(|e| format!("DB: {}", e))?;
 
-    trash_files_and_cleanup(&db_ref, &files_to_trash)
+    crate::core::trash::trash_and_cleanup_db(&db_ref, &files_to_trash)
 }
 
 // Reveal file in Finder (select the file in its parent folder)

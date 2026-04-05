@@ -1,8 +1,16 @@
+pub mod albums;
 pub mod bcut;
+pub mod config;
 pub mod scan;
 pub mod media;
 pub mod duplicate;
 pub mod fileops;
 pub mod folders;
+pub mod mcp;
 pub mod organize;
+pub mod schedule;
+pub mod sync;
+pub mod tags;
 pub mod undo;
+pub mod volume;
+pub mod watch;

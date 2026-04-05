@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback, useRef, useMemo } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { open } from "@tauri-apps/plugin-dialog";
+import { useTranslation } from "react-i18next";
 import { formatFileSize, formatDate } from "@/utils/format";
 import type { MediaFile, MediaListResponse } from "@/types";
 import {
@@ -13,15 +14,32 @@ import {
   Eye,
   X,
   Keyboard,
+  AlertTriangle,
+  Zap,
+  Crown,
 } from "lucide-react";
 
 type MarkState = "keep" | "discard" | "unmarked";
 
 interface ReviewFile extends MediaFile {
   mark: MarkState;
+  bcutGroupId?: string;
+  isBest?: boolean;
+}
+
+interface QualityScore {
+  sharpness: number;
+  exposure: number;
+  total: number;
+}
+
+interface BcutGroup {
+  id: string;
+  members: { media_id: string; is_best: boolean; quality_score: number }[];
 }
 
 export function ReviewView() {
+  const { t } = useTranslation();
   const [folderPath, setFolderPath] = useState("");
   const [files, setFiles] = useState<ReviewFile[]>([]);
   const [currentIdx, setCurrentIdx] = useState(0);
@@ -33,6 +51,11 @@ export function ReviewView() {
   );
   const [showShortcuts, setShowShortcuts] = useState(false);
   const [markAnim, setMarkAnim] = useState<MarkState | null>(null);
+  const [qualityScores, setQualityScores] = useState<Map<string, QualityScore>>(
+    new Map(),
+  );
+  const [autoAnalysis, setAutoAnalysis] = useState(false);
+  const [analyzing, setAnalyzing] = useState(false);
   const stripRef = useRef<HTMLDivElement>(null);
 
   const current = files[currentIdx] ?? null;
@@ -80,6 +103,24 @@ export function ReviewView() {
       );
       setCurrentIdx(0);
       setPreviewCache(new Map());
+
+      // Compute quality scores
+      const mediaIds = result.files.map((f) => f.id);
+      if (mediaIds.length > 0) {
+        try {
+          const scores = await invoke<Record<string, { sharpness: number; exposure: number; total: number }>>(
+            "compute_quality_scores",
+            { mediaIds },
+          );
+          const scoreMap = new Map<string, QualityScore>();
+          for (const [id, score] of Object.entries(scores)) {
+            scoreMap.set(id, score);
+          }
+          setQualityScores(scoreMap);
+        } catch {
+          // Quality scores not available
+        }
+      }
     } catch {
       // Handle error
     }
@@ -89,6 +130,62 @@ export function ReviewView() {
   useEffect(() => {
     if (folderPath) loadFiles();
   }, [folderPath, loadFiles]);
+
+  // Auto analysis: detect bcuts and auto-mark low quality
+  const runAutoAnalysis = useCallback(async () => {
+    if (files.length === 0) return;
+    setAnalyzing(true);
+    try {
+      // Run B-cut detection
+      await invoke("detect_bcuts", { timeGapSeconds: 5 });
+      const bcutResult = await invoke<{
+        groups: BcutGroup[];
+      }>("get_bcut_groups");
+
+      // Build a map: media_id -> { groupId, isBest }
+      const bcutMap = new Map<string, { groupId: string; isBest: boolean; quality: number }>();
+      for (const group of bcutResult.groups) {
+        for (const member of group.members) {
+          bcutMap.set(member.media_id, {
+            groupId: group.id,
+            isBest: member.is_best,
+            quality: member.quality_score,
+          });
+        }
+      }
+
+      // Auto-mark: B-cut (not best) → discard, best → keep
+      setFiles((prev) =>
+        prev.map((f) => {
+          const info = bcutMap.get(f.id);
+          if (info) {
+            return {
+              ...f,
+              bcutGroupId: info.groupId,
+              isBest: info.isBest,
+              mark: info.isBest ? "keep" : "discard",
+            };
+          }
+          // Files with quality < 40 also auto-mark as discard
+          const q = qualityScores.get(f.id);
+          if (q && q.total < 40) {
+            return { ...f, mark: "discard" };
+          }
+          return f;
+        }),
+      );
+    } catch {
+      // Detection failed
+    }
+    setAnalyzing(false);
+  }, [files.length, qualityScores]);
+
+  // When autoAnalysis toggle is turned on, run analysis
+  useEffect(() => {
+    if (autoAnalysis && files.length > 0 && !analyzing) {
+      runAutoAnalysis();
+    }
+  }, [autoAnalysis]);
 
   // Preload previews
   const loadPreview = useCallback(
@@ -262,6 +359,7 @@ export function ReviewView() {
   };
 
   const preview = current ? previewCache.get(current.id) : undefined;
+  const currentQuality = current ? qualityScores.get(current.id) : undefined;
 
   // --- Empty state ---
   if (!folderPath) {
@@ -361,6 +459,25 @@ export function ReviewView() {
             </button>
           )}
 
+          {/* Auto analysis toggle */}
+          <button
+            onClick={() => setAutoAnalysis((s) => !s)}
+            disabled={analyzing || files.length === 0}
+            className={`flex items-center gap-1 px-2 py-1 rounded-md text-[10px] font-medium transition-all ${
+              autoAnalysis
+                ? "bg-accent text-white shadow-sm shadow-accent/20"
+                : "text-text-secondary hover:bg-bg-secondary"
+            }`}
+            title="B컷 자동 분석: 연속 촬영 사진 그룹핑 + 품질 기반 자동 마킹"
+          >
+            {analyzing ? (
+              <div className="w-3 h-3 border-2 border-current border-t-transparent rounded-full animate-spin" />
+            ) : (
+              <Zap size={11} />
+            )}
+            자동 분석
+          </button>
+
           {/* Shortcuts help */}
           <button
             onClick={() => setShowShortcuts((s) => !s)}
@@ -390,7 +507,13 @@ export function ReviewView() {
       ) : (
         <>
           {/* Main preview — dark immersive background */}
-          <div className="flex-1 relative overflow-hidden bg-[#0a0a0a] flex items-center justify-center">
+          <div className={`flex-1 relative overflow-hidden bg-[#0a0a0a] flex items-center justify-center ${
+            currentQuality && currentQuality.total < 40
+              ? "ring-2 ring-inset ring-danger/60 shadow-inner shadow-danger/20"
+              : currentQuality && currentQuality.total > 70
+                ? "ring-1 ring-inset ring-success/30"
+                : ""
+          }`}>
             {/* Nav arrows */}
             <button
               onClick={goPrev}
@@ -458,6 +581,10 @@ export function ReviewView() {
                   <>
                     <X size={12} /> B컷
                   </>
+                ) : current?.isBest ? (
+                  <>
+                    <Crown size={12} /> BEST
+                  </>
                 ) : (
                   <>
                     <Check size={12} /> 유지
@@ -475,6 +602,14 @@ export function ReviewView() {
               <Eye size={15} />
             </button>
 
+            {/* Low quality warning icon */}
+            {currentQuality && currentQuality.total < 40 && (
+              <div className="absolute top-4 left-1/2 -translate-x-1/2 flex items-center gap-1.5 px-3 py-1.5 rounded-full text-[10px] font-bold text-danger bg-danger/20 backdrop-blur-sm">
+                <AlertTriangle size={12} />
+                {t("review.lowQuality", "낮은 품질")}
+              </div>
+            )}
+
             {/* File info overlay (bottom) */}
             <div className="absolute bottom-0 inset-x-0 bg-gradient-to-t from-black/60 via-black/20 to-transparent px-5 pb-3 pt-10">
               <p className="text-[12px] text-white/90 font-medium truncate">
@@ -491,6 +626,22 @@ export function ReviewView() {
                   <span>{formatDate(current.date_taken)}</span>
                 )}
               </div>
+              {/* Quality score bar */}
+              {currentQuality && (
+                <div className={`flex items-center gap-2 mt-1.5 text-[10px] tabular-nums ${
+                  currentQuality.total < 40
+                    ? "text-danger/80"
+                    : currentQuality.total > 70
+                      ? "text-success/80"
+                      : "text-white/50"
+                }`}>
+                  <span>{t("review.quality", "품질")} {Math.round(currentQuality.total)}%</span>
+                  <span className="text-white/20">|</span>
+                  <span>{t("review.sharpness", "선명도")} {Math.round(currentQuality.sharpness)}%</span>
+                  <span className="text-white/20">|</span>
+                  <span>{t("review.exposure", "노출")} {Math.round(currentQuality.exposure)}%</span>
+                </div>
+              )}
             </div>
           </div>
 
@@ -531,38 +682,57 @@ export function ReviewView() {
             ref={stripRef}
             className="flex gap-px px-1 py-1 bg-[#0a0a0a] overflow-x-auto scrollbar-thin shrink-0"
           >
-            {files.map((file, idx) => (
-              <button
-                key={file.id}
-                onClick={() => setCurrentIdx(idx)}
-                className={`relative shrink-0 w-11 h-11 rounded-sm overflow-hidden transition-all duration-150 ${
-                  idx === currentIdx
-                    ? "ring-2 ring-accent ring-offset-1 ring-offset-[#0a0a0a] scale-110 z-10"
-                    : file.mark === "discard"
-                      ? "opacity-25"
-                      : file.mark === "keep"
-                        ? "ring-1 ring-success/40"
-                        : "opacity-60 hover:opacity-90"
-                }`}
-              >
-                {file.thumbnail ? (
-                  <img
-                    src={`data:image/jpeg;base64,${file.thumbnail}`}
-                    alt=""
-                    className="w-full h-full object-cover"
-                  />
-                ) : (
-                  <div className="w-full h-full bg-white/5" />
-                )}
-                {/* Tiny mark dot */}
-                {file.mark === "discard" && (
-                  <div className="absolute bottom-0.5 right-0.5 w-2 h-2 rounded-full bg-danger" />
-                )}
-                {file.mark === "keep" && (
-                  <div className="absolute bottom-0.5 right-0.5 w-2 h-2 rounded-full bg-success" />
-                )}
-              </button>
-            ))}
+            {files.map((file, idx) => {
+              const q = qualityScores.get(file.id);
+              return (
+                <button
+                  key={file.id}
+                  onClick={() => setCurrentIdx(idx)}
+                  className={`relative shrink-0 w-11 h-11 rounded-sm overflow-hidden transition-all duration-150 ${
+                    idx === currentIdx
+                      ? "ring-2 ring-accent ring-offset-1 ring-offset-[#0a0a0a] scale-110 z-10"
+                      : file.mark === "discard"
+                        ? "opacity-25"
+                        : file.mark === "keep"
+                          ? "ring-1 ring-success/40"
+                          : "opacity-60 hover:opacity-90"
+                  }`}
+                >
+                  {file.thumbnail ? (
+                    <img
+                      src={`data:image/jpeg;base64,${file.thumbnail}`}
+                      alt=""
+                      className="w-full h-full object-cover"
+                    />
+                  ) : (
+                    <div className="w-full h-full bg-white/5" />
+                  )}
+                  {/* Tiny mark dot */}
+                  {file.mark === "discard" && (
+                    <div className="absolute bottom-0.5 right-0.5 w-2 h-2 rounded-full bg-danger" />
+                  )}
+                  {file.mark === "keep" && (
+                    <div className="absolute bottom-0.5 right-0.5 w-2 h-2 rounded-full bg-success" />
+                  )}
+                  {/* BEST crown for auto-analyzed */}
+                  {file.isBest && (
+                    <div className="absolute top-0 right-0 bg-success rounded-bl-sm p-px">
+                      <Crown size={7} className="text-white" />
+                    </div>
+                  )}
+                  {/* Quality dot */}
+                  {q && (
+                    <div className={`absolute top-0.5 left-0.5 w-1.5 h-1.5 rounded-full ${
+                      q.total < 40
+                        ? "bg-danger"
+                        : q.total <= 70
+                          ? "bg-yellow-500"
+                          : "bg-success"
+                    }`} />
+                  )}
+                </button>
+              );
+            })}
           </div>
         </>
       )}

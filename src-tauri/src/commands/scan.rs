@@ -4,7 +4,7 @@ use std::sync::Arc;
 
 use rayon::prelude::*;
 use serde::{Deserialize, Serialize};
-use tauri::{AppHandle, Emitter, Manager, State};
+use tauri::{AppHandle, Emitter, State};
 
 use crate::core::{metadata, scanner};
 use crate::db::queries::{self, MediaExif, MediaFile};

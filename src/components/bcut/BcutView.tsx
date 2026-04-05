@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback, useMemo } from "react";
 import { invoke } from "@tauri-apps/api/core";
-import { listen } from "@tauri-apps/api/event";
 import { formatFileSize, formatDate } from "@/utils/format";
+import { useBcutProgress } from "@/hooks/useTauriEvents";
 import {
   Focus,
   Search,
@@ -52,12 +52,6 @@ interface TrashResult {
   errors: string[];
 }
 
-interface BcutProgress {
-  phase: string;
-  current: number;
-  total: number;
-}
-
 export function BcutView() {
   const [summary, setSummary] = useState<BcutSummary | null>(null);
   const [selectedGroup, setSelectedGroup] = useState<BcutGroup | null>(null);
@@ -65,17 +59,8 @@ export function BcutView() {
   const [scanning, setScanning] = useState(false);
   const [trashing, setTrashing] = useState(false);
   const [trashResult, setTrashResult] = useState<string | null>(null);
-  const [progress, setProgress] = useState<BcutProgress | null>(null);
+  const progress = useBcutProgress();
   const [timeGap, setTimeGap] = useState(5);
-
-  useEffect(() => {
-    const unlisten = listen<BcutProgress>("bcut-progress", (e) => {
-      setProgress(e.payload);
-    });
-    return () => {
-      unlisten.then((f) => f());
-    };
-  }, []);
 
   const loadGroups = async () => {
     try {
@@ -105,7 +90,6 @@ export function BcutView() {
       // Handle error
     }
     setScanning(false);
-    setProgress(null);
   };
 
   const handlePreview = async (path: string) => {

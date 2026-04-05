@@ -1,7 +1,7 @@
 import { useState, useEffect } from "react";
 import { listen } from "@tauri-apps/api/event";
 import { useAppStore } from "@/stores/appStore";
-import type { ScanProgress } from "@/types";
+import type { ScanProgress, SyncProgress, WatchEvent } from "@/types";
 
 export function useScanProgress() {
   const setScanProgress = useAppStore((s) => s.setScanProgress);
@@ -66,4 +66,77 @@ export function useOrganizeProgress() {
   }, []);
 
   return progress;
+}
+
+export function useSyncProgress() {
+  const [progress, setProgress] = useState<SyncProgress | null>(null);
+
+  useEffect(() => {
+    const unlisten = listen<SyncProgress>("sync-progress", (event) => {
+      setProgress(event.payload);
+    });
+
+    return () => {
+      unlisten.then((fn) => fn());
+    };
+  }, []);
+
+  return progress;
+}
+
+export function useWatchEvents() {
+  const [events, setEvents] = useState<WatchEvent[]>([]);
+
+  useEffect(() => {
+    const unlisten = listen<WatchEvent[]>("watch-changes", (event) => {
+      setEvents((prev) => [...event.payload, ...prev].slice(0, 100));
+    });
+
+    return () => {
+      unlisten.then((fn) => fn());
+    };
+  }, []);
+
+  return events;
+}
+
+export function useBcutProgress() {
+  const [progress, setProgress] = useState<{
+    phase: string;
+    current: number;
+    total: number;
+  } | null>(null);
+
+  useEffect(() => {
+    const unlisten = listen("bcut-progress", (event) => {
+      setProgress(event.payload as any);
+    });
+
+    return () => {
+      unlisten.then((fn) => fn());
+    };
+  }, []);
+
+  return progress;
+}
+
+export function useVolumeEvents() {
+  const [mounted, setMounted] = useState<string[]>([]);
+  const [unmounted, setUnmounted] = useState<string[]>([]);
+
+  useEffect(() => {
+    const unlistenMount = listen<string>("volume-mounted", (event) => {
+      setMounted((prev) => [...prev, event.payload]);
+    });
+    const unlistenUnmount = listen<string>("volume-unmounted", (event) => {
+      setUnmounted((prev) => [...prev, event.payload]);
+    });
+
+    return () => {
+      unlistenMount.then((fn) => fn());
+      unlistenUnmount.then((fn) => fn());
+    };
+  }, []);
+
+  return { mounted, unmounted };
 }
