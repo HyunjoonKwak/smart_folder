@@ -40,8 +40,11 @@ pub async fn get_media_list(
     let db_ref = db.inner().clone();
     db_ref
         .with_conn(|conn| {
-            let files = queries::get_media_files_with_search(conn, folder, mtype, sq, offset, limit)?;
-            let (total, total_size) = queries::get_media_stats(conn)?;
+            let files = queries::get_media_files(conn, folder, mtype, sq, offset, limit)?;
+            // Count under the same filters, otherwise pagination never ends
+            // on a filtered result set
+            let total = queries::count_media_files(conn, folder, mtype, sq)?;
+            let (_, total_size) = queries::get_media_stats(conn)?;
             Ok(MediaListResponse {
                 files,
                 total,
@@ -165,7 +168,7 @@ pub async fn get_preview_video_frame(file_path: String) -> Result<String, String
     let unique = uuid::Uuid::new_v4().to_string();
     let tmp = std::env::temp_dir().join(format!("sc_vpreview_{}.jpg", unique));
 
-    let result = std::process::Command::new("ffmpeg")
+    let result = std::process::Command::new(crate::commands::scan::find_ffmpeg())
         .args(["-ss", "1", "-i", &file_path, "-vframes", "1",
                "-vf", "scale=1024:-1", "-q:v", "3", "-y", tmp.to_str().unwrap()])
         .stdout(std::process::Stdio::null())

@@ -91,6 +91,33 @@ pub fn batch_hash(paths: &[String]) -> Vec<HashResult> {
         .collect()
 }
 
+#[cfg(test)]
+mod tests {
+    use super::hamming_distance;
+
+    #[test]
+    fn identical_hashes_have_zero_distance() {
+        let h = vec![0xABu8; 8];
+        assert_eq!(hamming_distance(&h, &h), 0);
+    }
+
+    #[test]
+    fn counts_differing_bits() {
+        let a = vec![0b0000_0000u8; 8];
+        let mut b = a.clone();
+        b[0] = 0b0000_0111; // 3 bits
+        b[7] = 0b1000_0000; // 1 bit
+        assert_eq!(hamming_distance(&a, &b), 4);
+    }
+
+    #[test]
+    fn fully_inverted_hash_is_64() {
+        let a = vec![0x00u8; 8];
+        let b = vec![0xFFu8; 8];
+        assert_eq!(hamming_distance(&a, &b), 64);
+    }
+}
+
 pub fn generate_thumbnail(path: &Path, max_size: u32) -> Option<String> {
     let img = image::open(path).ok()?;
     let thumbnail = img.thumbnail(max_size, max_size);

@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback, useMemo } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { formatFileSize, formatDate } from "@/utils/format";
+import { toast } from "@/stores/toastStore";
 import { useDuplicateProgress } from "@/hooks/useTauriEvents";
 import {
   Copy,
@@ -68,8 +69,8 @@ export function DuplicatesView() {
         setSelectedGroup(null);
         setSelectedIdx(0);
       }
-    } catch {
-      // Handle error
+    } catch (e) {
+      toast.error(`중복 그룹을 불러오지 못했습니다: ${e}`);
     }
   };
 
@@ -81,8 +82,8 @@ export function DuplicatesView() {
     try {
       await invoke("detect_duplicates");
       await loadGroups();
-    } catch {
-      // Handle error
+    } catch (e) {
+      toast.error(`중복 탐지에 실패했습니다: ${e}`);
     }
     setScanning(false);
   };
@@ -147,8 +148,9 @@ export function DuplicatesView() {
         (result.failed > 0 ? ` (${result.failed}개 실패)` : "")
       );
       await loadGroups();
-    } catch {
+    } catch (e) {
       setTrashResult("휴지통 이동 실패");
+      toast.error(`휴지통 이동에 실패했습니다: ${e}`);
     }
     setTrashing(false);
   };
@@ -172,8 +174,9 @@ export function DuplicatesView() {
         (result.failed > 0 ? ` (${result.failed}개 실패)` : "")
       );
       await loadGroups();
-    } catch {
+    } catch (e) {
       setTrashResult("휴지통 이동 실패");
+      toast.error(`휴지통 이동에 실패했습니다: ${e}`);
     }
     setTrashing(false);
   };

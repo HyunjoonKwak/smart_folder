@@ -3,6 +3,7 @@ import { invoke } from "@tauri-apps/api/core";
 import { open } from "@tauri-apps/plugin-dialog";
 import { useOrganizeProgress } from "@/hooks/useTauriEvents";
 import { formatFileSize } from "@/utils/format";
+import { toast } from "@/stores/toastStore";
 import {
   ArrowRightLeft,
   FolderOpen,
@@ -43,8 +44,8 @@ export function OrganizeView() {
         strategy,
       });
       setPlan(result);
-    } catch {
-      // Handle error
+    } catch (e) {
+      toast.error(`정리 미리보기에 실패했습니다: ${e}`);
     }
     setLoading(false);
   };
@@ -59,8 +60,8 @@ export function OrganizeView() {
       });
       setResult(res);
       setPlan(null);
-    } catch {
-      // Handle error
+    } catch (e) {
+      toast.error(`정리 실행에 실패했습니다: ${e}`);
     }
     setExecuting(false);
   };

@@ -11,7 +11,7 @@ use crate::db::Database;
 // Extract year/month from various date formats
 // EXIF: "2024:07:15 14:32:00" or "2024-07-15T14:32:00"
 // File: "2024-07-15T14:32:00"
-fn extract_date_folder(date_str: &str) -> String {
+pub fn extract_date_folder(date_str: &str) -> String {
     let cleaned = date_str.trim();
     if cleaned.is_empty() {
         return "미분류".to_string();
@@ -28,7 +28,7 @@ fn extract_date_folder(date_str: &str) -> String {
         let day = parts[2].trim();
 
         if year.len() == 4 && (year.starts_with("20") || year.starts_with("19")) {
-            return format!("{}-{}-{}", year, month, day);
+            return format!("{}-{:0>2}-{:0>2}", year, month, day);
         }
     }
 
@@ -235,4 +235,31 @@ pub async fn execute_organize(
         failed: result.failed.len(),
         batch_id,
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::extract_date_folder;
+
+    #[test]
+    fn parses_exif_colon_format() {
+        assert_eq!(extract_date_folder("2024:07:15 14:32:00"), "2024-07-15");
+    }
+
+    #[test]
+    fn parses_iso_format() {
+        assert_eq!(extract_date_folder("2024-07-15T14:32:00"), "2024-07-15");
+    }
+
+    #[test]
+    fn zero_pads_month_and_day() {
+        assert_eq!(extract_date_folder("2024:7:5 09:00:00"), "2024-07-05");
+    }
+
+    #[test]
+    fn rejects_garbage() {
+        assert_eq!(extract_date_folder(""), "미분류");
+        assert_eq!(extract_date_folder("not a date"), "미분류");
+        assert_eq!(extract_date_folder("0000:00"), "미분류");
+    }
 }

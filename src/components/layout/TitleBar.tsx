@@ -17,6 +17,7 @@ import {
   FolderTree,
   History,
   LayoutDashboard,
+  UploadCloud,
 } from "lucide-react";
 import type { AppView } from "@/types";
 
@@ -39,6 +40,7 @@ export function TitleBar() {
     { id: "organize", label: t("nav.organize"), icon: ArrowRightLeft, tooltip: "날짜/유형별 폴더 자동 분류" },
     { id: "cleanup", label: t("nav.cleanup"), icon: Sparkles, tooltip: "중복→B컷→정리 자동 워크플로우" },
     { id: "sync", label: t("nav.sync"), icon: RefreshCw, tooltip: "소스→대상 단방향 파일 동기화" },
+    { id: "nas", label: t("nav.nas"), icon: UploadCloud, tooltip: "정리한 사진을 Synology NAS로 업로드" },
     { id: "foldertree", label: t("nav.folder"), icon: FolderTree, tooltip: "폴더 구조, 용량 분석, 비교" },
     { id: "history", label: t("nav.history"), icon: History, tooltip: "작업 이력 확인 및 되돌리기" },
   ];

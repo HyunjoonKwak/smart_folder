@@ -13,7 +13,8 @@
     "sync": "동기화",
     "cleanup": "통합 정리",
     "tools": "도구",
-    "settings": "설정"
+    "settings": "설정",
+    "nas": "NAS 업로드"
   },
   "tools": {
     "bcutDetect": "B컷 자동 탐지",

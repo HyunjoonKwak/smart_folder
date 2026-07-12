@@ -20,6 +20,8 @@ import {
   MapPin,
 } from "lucide-react";
 import { formatFileSize } from "@/utils/format";
+import { runPhase1Loop } from "@/utils/phase1";
+import { toast } from "@/stores/toastStore";
 
 interface SourceFolder {
   id: string;
@@ -85,42 +87,12 @@ export function Sidebar() {
         setIsScanning(false);
 
         // Phase 1: process batches in a loop from frontend
-        startPhase1();
+        runPhase1Loop();
       }
-    } catch {
+    } catch (e) {
       setIsScanning(false);
+      toast.error(`폴더 스캔에 실패했습니다: ${e}`);
     }
-  };
-
-  const startPhase1 = () => {
-    useAppStore.getState().setPhase1Progress(0, 0, true);
-    const run = async () => {
-      try {
-        const [processed, done, total] = await invoke<[number, number, number]>("process_phase1");
-
-        useAppStore.getState().setPhase1Progress(done, total, processed > 0);
-
-        // Refresh gallery every 5 batches (not every batch, to reduce flicker)
-        if (done % 250 < 50) {
-          const newStats = await invoke("get_media_stats");
-          setStats(newStats as any);
-          useAppStore.getState().triggerRefresh();
-        }
-
-        if (processed > 0) {
-          setTimeout(run, 300);
-        } else {
-          // Final refresh
-          const newStats = await invoke("get_media_stats");
-          setStats(newStats as any);
-          useAppStore.getState().triggerRefresh();
-          useAppStore.getState().setPhase1Progress(total, total, false);
-        }
-      } catch {
-        useAppStore.getState().setPhase1Progress(0, 0, false);
-      }
-    };
-    run();
   };
 
   const handleRescan = async (path: string) => {
@@ -130,9 +102,9 @@ export function Sidebar() {
       await invoke("update_folder_scan_time", { path });
       const newStats = await invoke("get_media_stats");
       setStats(newStats as any);
-      startPhase1();
-    } catch {
-      // Handle error
+      runPhase1Loop();
+    } catch (e) {
+      toast.error(`다시 스캔에 실패했습니다: ${e}`);
     }
     setIsScanning(false);
   };
@@ -144,8 +116,8 @@ export function Sidebar() {
       setSelectedFolder(null);
       setStats(null);
       useAppStore.getState().triggerRefresh();
-    } catch {
-      // Handle error
+    } catch (e) {
+      toast.error(`라이브러리 초기화에 실패했습니다: ${e}`);
     }
   };
 

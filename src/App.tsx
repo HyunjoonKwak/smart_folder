@@ -18,15 +18,21 @@ import { SettingsView } from "@/components/settings/SettingsView";
 import { TagManager } from "@/components/tags/TagManager";
 import { AlbumManager } from "@/components/albums/AlbumManager";
 import { MapView } from "@/components/map/MapView";
+import { NasUploadView } from "@/components/nas/NasUploadView";
+import { Toasts } from "@/components/common/Toasts";
+import { resumePhase1IfPending } from "@/utils/phase1";
 import type { AppConfig, AppView, MediaStats } from "@/types";
 
-const FULL_WIDTH_VIEWS: ReadonlySet<AppView> = new Set([]);
+// The NAS view carries its own connection/folder panel, so it takes the full width
+const FULL_WIDTH_VIEWS: ReadonlySet<AppView> = new Set(["nas"]);
 
 function App() {
   const currentView = useAppStore((s) => s.currentView);
   const setStats = useAppStore((s) => s.setStats);
   const setConfig = useAppStore((s) => s.setConfig);
   const config = useAppStore((s) => s.config);
+  const setNasUploadedIds = useAppStore((s) => s.setNasUploadedIds);
+  const refreshCounter = useAppStore((s) => s.refreshCounter);
 
   useScanProgress();
 
@@ -46,7 +52,7 @@ function App() {
       }
     };
     loadInitial();
-  }, [setStats, setConfig]);
+  }, [setStats, setConfig, refreshCounter]);
 
   // Apply theme to document when config changes
   useEffect(() => {
@@ -59,6 +65,24 @@ function App() {
       document.documentElement.removeAttribute("data-theme");
     }
   }, [config]);
+
+  useEffect(() => {
+    const loadUploaded = async () => {
+      try {
+        const ids = await invoke<string[]>("nas_uploaded_media_ids");
+        setNasUploadedIds(new Set(ids));
+      } catch {
+        // DB not ready yet
+      }
+    };
+    loadUploaded();
+  }, [setNasUploadedIds, refreshCounter]);
+
+  // Resume thumbnail/EXIF processing left over from an interrupted scan
+  // or the base64-to-file thumbnail migration
+  useEffect(() => {
+    resumePhase1IfPending();
+  }, []);
 
   const renderMainContent = () => {
     switch (currentView) {
@@ -91,6 +115,8 @@ function App() {
         return <AlbumManager />;
       case "map":
         return <MapView />;
+      case "nas":
+        return <NasUploadView />;
       default:
         return <DashboardView />;
     }
@@ -105,6 +131,7 @@ function App() {
           {renderMainContent()}
         </main>
       </div>
+      <Toasts />
     </div>
   );
 }

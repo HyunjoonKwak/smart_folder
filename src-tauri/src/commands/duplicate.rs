@@ -204,82 +204,300 @@ pub async fn detect_duplicates(
         }).ok();
     }
 
-    // Phase 4: Similar image detection via perceptual hash
-    app.emit("duplicate-progress", DuplicateProgress {
-        phase: "유사 이미지 분석".into(),
-        total: total_files as usize,
-        current: 0,
-        detail: "퍼셉추얼 해시 비교 중...".into(),
-    }).ok();
-
-    let phash_files: Vec<(String, Vec<u8>)> = db_ref.with_conn(|conn| {
-        let mut stmt = conn.prepare(
-            "SELECT id, phash FROM media_files WHERE phash IS NOT NULL AND scan_phase >= 1"
-        )?;
-        let rows = stmt.query_map([], |row| {
-            Ok((row.get::<_, String>(0)?, row.get::<_, Vec<u8>>(1)?))
-        })?.collect::<Result<Vec<_>, _>>()?;
-        Ok(rows)
-    }).map_err(|e| format!("DB: {}", e))?;
-
-    // Compare all pairs (O(n^2) but with early exit for already-matched IDs)
-    let mut similar_groups_count = 0usize;
-    let mut matched_ids: std::collections::HashSet<String> = std::collections::HashSet::new();
-
-    for i in 0..phash_files.len() {
-        if matched_ids.contains(&phash_files[i].0) { continue; }
-        let mut group_members = vec![phash_files[i].0.clone()];
-
-        for j in (i + 1)..phash_files.len() {
-            if matched_ids.contains(&phash_files[j].0) { continue; }
-            let dist = hasher::hamming_distance(&phash_files[i].1, &phash_files[j].1);
-            if dist <= 10 && dist > 0 {
-                group_members.push(phash_files[j].0.clone());
-            }
-        }
-
-        if group_members.len() >= 2 {
-            let group_id = uuid::Uuid::new_v4().to_string();
-            let sim_score = 1.0_f64;
-            db_ref.with_conn(|conn| {
-                conn.execute(
-                    "INSERT INTO duplicate_groups (id, match_type, similarity_score, status) VALUES (?1, 'similar', ?2, 'pending')",
-                    params![group_id, sim_score],
-                )?;
-                for (j, id) in group_members.iter().enumerate() {
-                    conn.execute(
-                        "INSERT OR IGNORE INTO duplicate_members (group_id, media_id, is_preferred) VALUES (?1, ?2, ?3)",
-                        params![group_id, id, if j == 0 { 1 } else { 0 }],
-                    )?;
-                    matched_ids.insert(id.clone());
-                }
-                Ok(())
-            }).map_err(|e| format!("DB: {}", e))?;
-
-            similar_groups_count += 1;
-        }
-
-        if i % 50 == 0 {
-            app.emit("duplicate-progress", DuplicateProgress {
-                phase: "유사 이미지 분석".into(),
-                total: phash_files.len(),
-                current: i,
-                detail: format!("{}개 비교 중... 유사 {}그룹 발견", i, similar_groups_count),
-            }).ok();
-        }
-    }
+    // Phase 4: perceptual-hash pass for visually similar (not byte-identical) images
+    let (similar_groups, similar_dups, similar_savings) =
+        detect_similar_groups(&app, &db_ref)?;
+    total_duplicates += similar_dups;
+    space_savings += similar_savings;
 
     app.emit("duplicate-progress", DuplicateProgress {
         phase: "complete".into(),
         total: total_files as usize,
         current: total_files as usize,
         detail: format!(
-            "완료: 전체 {}개 파일 중 정확 {}그룹, 유사 {}그룹, {}개 중복 발견",
-            total_files, exact_groups, similar_groups_count, total_duplicates
+            "완료: 완전 일치 {}그룹 · 유사 {}그룹 · 중복 {}개 발견",
+            exact_groups, similar_groups, total_duplicates
         ),
     }).ok();
 
-    Ok(DuplicateScanResult { exact_groups, similar_groups: similar_groups_count, total_duplicates, space_savings })
+    Ok(DuplicateScanResult { exact_groups, similar_groups, total_duplicates, space_savings })
+}
+
+// How different two 64-bit perceptual hashes may be to still count as similar
+const SIMILAR_HAMMING_THRESHOLD: u32 = 5;
+// Degenerate band buckets (e.g. flat black bands) would explode pairwise
+// comparison; anything this common is useless as a discriminator anyway
+const MAX_BAND_BUCKET: usize = 500;
+const PHASH_CHUNK: usize = 200;
+
+struct Dsu {
+    parent: Vec<usize>,
+    size: Vec<usize>,
+}
+
+impl Dsu {
+    fn new(n: usize) -> Self {
+        Self {
+            parent: (0..n).collect(),
+            size: vec![1; n],
+        }
+    }
+    // Iterative with path halving — no recursion depth risk on long chains
+    fn find(&mut self, mut x: usize) -> usize {
+        while self.parent[x] != x {
+            self.parent[x] = self.parent[self.parent[x]];
+            x = self.parent[x];
+        }
+        x
+    }
+    // Union by size keeps trees shallow
+    fn union(&mut self, a: usize, b: usize) {
+        let (mut ra, mut rb) = (self.find(a), self.find(b));
+        if ra == rb {
+            return;
+        }
+        if self.size[ra] < self.size[rb] {
+            std::mem::swap(&mut ra, &mut rb);
+        }
+        self.parent[rb] = ra;
+        self.size[ra] += self.size[rb];
+    }
+}
+
+struct SimilarCandidate {
+    id: String,
+    file_path: String,
+    thumb_path: Option<String>,
+    phash: Option<Vec<u8>>,
+    file_size: i64,
+    pixels: i64,
+}
+
+fn load_similar_candidates(db_ref: &Arc<Database>) -> Result<Vec<SimilarCandidate>, String> {
+    db_ref
+        .with_conn(|conn| {
+            // Non-preferred members of pending exact groups are byte-identical
+            // to their keeper; including them would only duplicate exact groups
+            let mut stmt = conn.prepare(
+                "SELECT mf.id, mf.file_path, mf.thumbnail, mf.phash, mf.file_size,
+                        COALESCE(mf.width, 0) * COALESCE(mf.height, 0)
+                 FROM media_files mf
+                 WHERE mf.media_type = 'image'
+                   AND mf.id NOT IN (
+                     SELECT dm.media_id FROM duplicate_members dm
+                     JOIN duplicate_groups dg ON dm.group_id = dg.id
+                     WHERE dg.status = 'pending' AND dm.is_preferred = 0
+                   )",
+            )?;
+            let rows = stmt
+                .query_map([], |row| {
+                    let thumb: Option<String> = row.get(2)?;
+                    Ok(SimilarCandidate {
+                        id: row.get(0)?,
+                        file_path: row.get(1)?,
+                        // legacy rows may still hold base64 here — only cache file
+                        // paths (always *.jpg; base64 has no '.') are usable
+                        thumb_path: thumb.filter(|t| t.ends_with(".jpg")),
+                        phash: row.get(3)?,
+                        file_size: row.get(4)?,
+                        pixels: row.get(5)?,
+                    })
+                })?
+                .collect::<Result<Vec<_>, _>>()?;
+            Ok(rows)
+        })
+        .map_err(|e| format!("DB: {}", e))
+}
+
+// Compute missing perceptual hashes (thumbnail file preferred — far cheaper
+// to decode than originals), persist them, then group via 8-band LSH + DSU.
+fn detect_similar_groups(
+    app: &AppHandle,
+    db_ref: &Arc<Database>,
+) -> Result<(usize, usize, i64), String> {
+    let mut candidates = load_similar_candidates(db_ref)?;
+    let need_hash: Vec<usize> = candidates
+        .iter()
+        .enumerate()
+        .filter(|(_, c)| c.phash.is_none())
+        .map(|(i, _)| i)
+        .collect();
+
+    let total_to_hash = need_hash.len();
+    for (done, chunk) in need_hash.chunks(PHASH_CHUNK).enumerate() {
+        let computed: Vec<(usize, Option<Vec<u8>>)> = chunk
+            .par_iter()
+            .map(|&i| {
+                let c = &candidates[i];
+                let source = c.thumb_path.as_deref().unwrap_or(&c.file_path);
+                (i, hasher::compute_phash(Path::new(source)))
+            })
+            .collect();
+
+        db_ref
+            .with_conn(|conn| {
+                let tx = conn.unchecked_transaction()?;
+                for (i, hash) in &computed {
+                    if let Some(h) = hash {
+                        tx.execute(
+                            "UPDATE media_files SET phash = ?1 WHERE id = ?2",
+                            params![h, candidates[*i].id],
+                        )?;
+                    }
+                }
+                tx.commit()
+            })
+            .map_err(|e| format!("DB: {}", e))?;
+
+        for (i, hash) in computed {
+            candidates[i].phash = hash;
+        }
+
+        app.emit("duplicate-progress", DuplicateProgress {
+            phase: "유사 이미지 분석".into(),
+            total: total_to_hash,
+            current: ((done + 1) * PHASH_CHUNK).min(total_to_hash),
+            detail: format!("이미지 지각 해시 계산 중... ({}개)", total_to_hash),
+        }).ok();
+    }
+
+    let hashed: Vec<usize> = candidates
+        .iter()
+        .enumerate()
+        .filter(|(_, c)| c.phash.as_ref().map(|h| h.len() == 8).unwrap_or(false))
+        .map(|(i, _)| i)
+        .collect();
+
+    // LSH banding: similar hashes (≤7 differing bits) share at least one
+    // identical byte-band, so only bucket-mates need pairwise comparison
+    let mut buckets: HashMap<(usize, u8), Vec<usize>> = HashMap::new();
+    for &i in &hashed {
+        let hash = candidates[i].phash.as_ref().unwrap();
+        for (band, byte) in hash.iter().enumerate() {
+            buckets.entry((band, *byte)).or_default().push(i);
+        }
+    }
+
+    let mut dsu = Dsu::new(candidates.len());
+    for bucket in buckets.values() {
+        if bucket.len() < 2 || bucket.len() > MAX_BAND_BUCKET {
+            continue;
+        }
+        for a_pos in 0..bucket.len() {
+            for b_pos in (a_pos + 1)..bucket.len() {
+                let (a, b) = (bucket[a_pos], bucket[b_pos]);
+                if dsu.find(a) == dsu.find(b) {
+                    continue;
+                }
+                let dist = hasher::hamming_distance(
+                    candidates[a].phash.as_ref().unwrap(),
+                    candidates[b].phash.as_ref().unwrap(),
+                );
+                if dist <= SIMILAR_HAMMING_THRESHOLD {
+                    dsu.union(a, b);
+                }
+            }
+        }
+    }
+
+    let mut clusters: HashMap<usize, Vec<usize>> = HashMap::new();
+    for &i in &hashed {
+        clusters.entry(dsu.find(i)).or_default().push(i);
+    }
+
+    let mut similar_groups = 0usize;
+    let mut duplicates = 0usize;
+    let mut savings = 0i64;
+
+    for members in clusters.values().filter(|m| m.len() > 1) {
+        // Keep the highest-resolution (then largest) file by default
+        let preferred = *members
+            .iter()
+            .max_by_key(|&&i| (candidates[i].pixels, candidates[i].file_size))
+            .unwrap();
+        let max_dist = max_pairwise_distance(&candidates, members);
+        let score = 1.0 - (max_dist as f64) / 64.0;
+
+        let group_id = uuid::Uuid::new_v4().to_string();
+        db_ref
+            .with_conn(|conn| {
+                let tx = conn.unchecked_transaction()?;
+                tx.execute(
+                    "INSERT INTO duplicate_groups (id, match_type, similarity_score, status)
+                     VALUES (?1, 'similar', ?2, 'pending')",
+                    params![group_id, score],
+                )?;
+                for &i in members {
+                    tx.execute(
+                        "INSERT INTO duplicate_members (group_id, media_id, is_preferred)
+                         VALUES (?1, ?2, ?3)",
+                        params![group_id, candidates[i].id, if i == preferred { 1 } else { 0 }],
+                    )?;
+                }
+                tx.commit()
+            })
+            .map_err(|e| format!("DB: {}", e))?;
+
+        similar_groups += 1;
+        duplicates += members.len() - 1;
+        savings += members
+            .iter()
+            .filter(|&&i| i != preferred)
+            .map(|&i| candidates[i].file_size)
+            .sum::<i64>();
+    }
+
+    Ok((similar_groups, duplicates, savings))
+}
+
+fn max_pairwise_distance(candidates: &[SimilarCandidate], members: &[usize]) -> u32 {
+    let mut max_dist = 0u32;
+    for a_pos in 0..members.len() {
+        for b_pos in (a_pos + 1)..members.len() {
+            let dist = hasher::hamming_distance(
+                candidates[members[a_pos]].phash.as_ref().unwrap(),
+                candidates[members[b_pos]].phash.as_ref().unwrap(),
+            );
+            max_dist = max_dist.max(dist);
+        }
+    }
+    max_dist
+}
+
+#[cfg(test)]
+mod tests {
+    use super::Dsu;
+
+    #[test]
+    fn dsu_groups_transitively() {
+        let mut dsu = Dsu::new(5);
+        dsu.union(0, 1);
+        dsu.union(1, 2);
+        assert_eq!(dsu.find(0), dsu.find(2));
+        assert_ne!(dsu.find(0), dsu.find(3));
+        assert_ne!(dsu.find(3), dsu.find(4));
+    }
+
+    #[test]
+    fn dsu_union_is_idempotent() {
+        let mut dsu = Dsu::new(3);
+        dsu.union(0, 1);
+        dsu.union(0, 1);
+        dsu.union(1, 0);
+        assert_eq!(dsu.find(0), dsu.find(1));
+        let root = dsu.find(0);
+        assert_eq!(dsu.size[root], 2);
+    }
+
+    #[test]
+    fn dsu_handles_long_chains_without_recursion() {
+        let n = 100_000;
+        let mut dsu = Dsu::new(n);
+        for i in 0..n - 1 {
+            dsu.union(i, i + 1);
+        }
+        assert_eq!(dsu.find(0), dsu.find(n - 1));
+    }
 }
 
 // Fast: no thumbnail generation, just DB query

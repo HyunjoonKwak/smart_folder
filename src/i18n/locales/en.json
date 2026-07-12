@@ -13,7 +13,8 @@
     "sync": "Sync",
     "cleanup": "Cleanup",
     "tools": "Tools",
-    "settings": "Settings"
+    "settings": "Settings",
+    "nas": "NAS Upload"
   },
   "tools": {
     "bcutDetect": "B-Cut Detection",

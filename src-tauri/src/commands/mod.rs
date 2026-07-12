@@ -3,6 +3,7 @@ pub mod bcut;
 pub mod config;
 pub mod scan;
 pub mod media;
+pub mod nas;
 pub mod duplicate;
 pub mod fileops;
 pub mod folders;

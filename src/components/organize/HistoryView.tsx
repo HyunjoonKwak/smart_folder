@@ -1,6 +1,7 @@
 import { useState, useEffect } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { formatDateTime } from "@/utils/format";
+import { toast } from "@/stores/toastStore";
 import { History, Undo2, CheckCircle, ChevronDown, ChevronRight } from "lucide-react";
 import type { UndoBatch } from "@/types";
 
@@ -29,8 +30,9 @@ export function HistoryView() {
     try {
       await invoke("undo_batch", { batchId });
       await loadHistory();
-    } catch {
-      // Handle error
+      toast.success("되돌리기가 완료되었습니다");
+    } catch (e) {
+      toast.error(`되돌리기에 실패했습니다: ${e}`);
     }
     setUndoing(null);
   };

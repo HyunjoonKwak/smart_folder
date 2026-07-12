@@ -2,6 +2,8 @@ import { useState, useEffect, useCallback, useMemo } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { formatFileSize, formatDate } from "@/utils/format";
 import { useBcutProgress } from "@/hooks/useTauriEvents";
+import { thumbSrc } from "@/utils/media";
+import { toast } from "@/stores/toastStore";
 import {
   Focus,
   Search,
@@ -73,8 +75,8 @@ export function BcutView() {
         setSelectedGroup(null);
         setSelectedIdx(0);
       }
-    } catch {
-      // Handle error
+    } catch (e) {
+      toast.error(`B컷 그룹을 불러오지 못했습니다: ${e}`);
     }
   };
 
@@ -86,8 +88,8 @@ export function BcutView() {
     try {
       await invoke("detect_bcuts", { timeGapSeconds: timeGap });
       await loadGroups();
-    } catch {
-      // Handle error
+    } catch (e) {
+      toast.error(`B컷 탐지에 실패했습니다: ${e}`);
     }
     setScanning(false);
   };
@@ -125,8 +127,8 @@ export function BcutView() {
         setSelectedGroup(null);
         setSelectedIdx(0);
       }
-    } catch {
-      // Handle error
+    } catch (e) {
+      toast.error(`그룹 건너뛰기에 실패했습니다: ${e}`);
     }
   };
 
@@ -141,8 +143,9 @@ export function BcutView() {
           (result.failed > 0 ? ` (${result.failed}개 실패)` : ""),
       );
       await loadGroups();
-    } catch {
+    } catch (e) {
       setTrashResult("휴지통 이동 실패");
+      toast.error(`휴지통 이동에 실패했습니다: ${e}`);
     }
     setTrashing(false);
   };
@@ -367,9 +370,9 @@ export function BcutView() {
                 >
                   {/* Thumbnail preview */}
                   <div className="w-11 h-11 rounded-md overflow-hidden bg-bg-secondary shrink-0">
-                    {best?.thumbnail ? (
+                    {thumbSrc(best?.thumbnail) ? (
                       <img
-                        src={`data:image/jpeg;base64,${best.thumbnail}`}
+                        src={thumbSrc(best?.thumbnail)!}
                         alt=""
                         className="w-full h-full object-cover"
                       />
@@ -449,9 +452,9 @@ export function BcutView() {
                       >
                         {/* Image area */}
                         <div className="relative aspect-[4/3] bg-[#0a0a0a] overflow-hidden">
-                          {member.thumbnail ? (
+                          {thumbSrc(member.thumbnail) ? (
                             <img
-                              src={`data:image/jpeg;base64,${member.thumbnail}`}
+                              src={thumbSrc(member.thumbnail)!}
                               alt={member.file_name}
                               className={`w-full h-full object-cover transition-all duration-200 ${
                                 isBest

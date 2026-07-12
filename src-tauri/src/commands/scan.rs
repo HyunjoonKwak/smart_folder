@@ -4,7 +4,7 @@ use std::sync::Arc;
 
 use rayon::prelude::*;
 use serde::{Deserialize, Serialize};
-use tauri::{AppHandle, Emitter, State};
+use tauri::{AppHandle, Emitter, Manager, State};
 
 use crate::core::{metadata, scanner};
 use crate::db::queries::{self, MediaExif, MediaFile};
@@ -107,14 +107,29 @@ pub async fn scan_directory(
     Ok(ScanResult { total_files: total, new_files, skipped, cancelled })
 }
 
+// Thumbnails live as JPEG files here instead of base64 blobs in SQLite:
+// keeps media_files rows small so list queries stay fast at scale, and
+// lets the webview load them through the asset protocol.
+pub fn thumbs_dir(app: &AppHandle) -> std::path::PathBuf {
+    let dir = app
+        .path()
+        .app_data_dir()
+        .unwrap_or_else(|_| std::env::temp_dir())
+        .join("thumbs");
+    let _ = std::fs::create_dir_all(&dir);
+    dir
+}
+
 // Phase 1: Process ONE batch (50 files) and return immediately
 // Frontend calls this in a loop with setInterval
 // This way get_media_list can run between batches
 #[tauri::command]
 pub async fn process_phase1(
+    app: AppHandle,
     db: State<'_, Arc<Database>>,
 ) -> Result<(usize, usize, usize), String> {
     let db_ref = db.inner().clone();
+    let thumb_dir = thumbs_dir(&app);
 
     let batch: Vec<(String, String, String)> = db_ref
         .with_conn(|conn| queries::get_phase0_files(conn, 50))
@@ -134,6 +149,7 @@ pub async fn process_phase1(
         .par_iter()
         .filter_map(|(id, file_path, media_type)| {
             let path = Path::new(file_path);
+            let thumb_path = thumb_dir.join(format!("{}.jpg", id));
             let mut width = None;
             let mut height = None;
             let mut exif_out = None;
@@ -155,9 +171,9 @@ pub async fn process_phase1(
                     camera_model: exif.camera_model, gps_latitude: exif.gps_latitude,
                     gps_longitude: exif.gps_longitude, orientation: exif.orientation,
                 });
-                thumbnail = make_thumbnail_fast(path);
+                thumbnail = make_thumbnail_fast(path, &thumb_path);
             } else if path.exists() && media_type == "video" {
-                thumbnail = make_video_thumbnail(path);
+                thumbnail = make_video_thumbnail(path, &thumb_path);
             }
 
             Some((id.clone(), width, height, exif_out, thumbnail))
@@ -186,41 +202,43 @@ pub async fn process_phase1(
     Ok((count, done as usize, total_files as usize))
 }
 
-// sips thumbnail (macOS hardware accelerated)
-fn make_thumbnail_fast(path: &Path) -> Option<String> {
-    let unique = uuid::Uuid::new_v4().to_string();
-    let tmp = std::env::temp_dir().join(format!("sc_{}.jpg", unique));
-    let result = std::process::Command::new("sips")
+fn is_valid_thumb(path: &Path) -> bool {
+    std::fs::metadata(path).map(|m| m.len() > 0).unwrap_or(false)
+}
+
+// Write a 256px JPEG thumbnail to `out`; returns the file path on success.
+// sips first (macOS hardware accelerated), pure-Rust `image` as fallback so
+// the pipeline also works without sips (e.g. non-macOS builds).
+fn make_thumbnail_fast(path: &Path, out: &Path) -> Option<String> {
+    let sips_ok = std::process::Command::new("sips")
         .args(["--resampleHeightWidthMax", "256", "-s", "format", "jpeg",
-               "-s", "formatOptions", "80", path.to_str()?, "--out", tmp.to_str()?])
+               "-s", "formatOptions", "80", path.to_str()?, "--out", out.to_str()?])
         .stdout(std::process::Stdio::null())
         .stderr(std::process::Stdio::null())
         .status()
-        .ok()?;
+        .map(|s| s.success())
+        .unwrap_or(false);
 
-    if result.success() {
-        let bytes = std::fs::read(&tmp).ok()?;
-        let _ = std::fs::remove_file(&tmp);
-        if !bytes.is_empty() {
-            use base64::Engine;
-            return Some(base64::engine::general_purpose::STANDARD.encode(&bytes));
-        }
+    if sips_ok && is_valid_thumb(out) {
+        return Some(out.to_string_lossy().to_string());
     }
-    let _ = std::fs::remove_file(&tmp);
+    let _ = std::fs::remove_file(out);
 
-    // Fallback
+    // Fallback: pure Rust (JPEG has no alpha, so flatten to RGB first)
     let img = image::open(path).ok()?;
-    let thumb = img.thumbnail(256, 256);
-    let mut buf = Vec::with_capacity(32768);
-    let mut cursor = std::io::Cursor::new(&mut buf);
-    let enc = image::codecs::jpeg::JpegEncoder::new_with_quality(&mut cursor, 80);
-    thumb.write_with_encoder(enc).ok()?;
-    use base64::Engine;
-    Some(base64::engine::general_purpose::STANDARD.encode(&buf))
+    let thumb = image::DynamicImage::ImageRgb8(img.thumbnail(256, 256).to_rgb8());
+    let file = std::fs::File::create(out).ok()?;
+    let mut writer = std::io::BufWriter::new(file);
+    let enc = image::codecs::jpeg::JpegEncoder::new_with_quality(&mut writer, 80);
+    if thumb.write_with_encoder(enc).is_err() {
+        let _ = std::fs::remove_file(out);
+        return None;
+    }
+    Some(out.to_string_lossy().to_string())
 }
 
 // Find ffmpeg binary (Tauri app may not have /opt/homebrew/bin in PATH)
-fn find_ffmpeg() -> &'static str {
+pub fn find_ffmpeg() -> &'static str {
     use std::sync::OnceLock;
     static FFMPEG: OnceLock<String> = OnceLock::new();
     FFMPEG.get_or_init(|| {
@@ -238,10 +256,8 @@ fn find_ffmpeg() -> &'static str {
     })
 }
 
-// Video thumbnail: capture frame at 1 second using ffmpeg
-fn make_video_thumbnail(path: &Path) -> Option<String> {
-    let unique = uuid::Uuid::new_v4().to_string();
-    let tmp = std::env::temp_dir().join(format!("sc_vid_{}.jpg", unique));
+// Video thumbnail: capture frame at 1 second using ffmpeg, written to `out`
+fn make_video_thumbnail(path: &Path, out: &Path) -> Option<String> {
     let path_str = path.to_string_lossy();
 
     let output = std::process::Command::new(find_ffmpeg())
@@ -254,34 +270,30 @@ fn make_video_thumbnail(path: &Path) -> Option<String> {
             "-update", "1",
             "-y",
         ])
-        .arg(tmp.to_string_lossy().as_ref())
+        .arg(out.to_string_lossy().as_ref())
         .stdout(std::process::Stdio::null())
         .stderr(std::process::Stdio::piped())
         .output()
         .ok()?;
 
-    if output.status.success() || tmp.exists() {
-        let bytes = std::fs::read(&tmp).ok()?;
-        let _ = std::fs::remove_file(&tmp);
-        if !bytes.is_empty() {
-            use base64::Engine;
-            return Some(base64::engine::general_purpose::STANDARD.encode(&bytes));
-        }
-    } else {
-        let stderr = String::from_utf8_lossy(&output.stderr);
-        log::warn!("ffmpeg failed for {}: {}", path_str, stderr.lines().last().unwrap_or("unknown"));
+    if (output.status.success() || out.exists()) && is_valid_thumb(out) {
+        return Some(out.to_string_lossy().to_string());
     }
-    let _ = std::fs::remove_file(&tmp);
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    log::warn!("ffmpeg failed for {}: {}", path_str, stderr.lines().last().unwrap_or("unknown"));
+    let _ = std::fs::remove_file(out);
     None
 }
 
 // On-demand thumbnails for duplicate comparison
 #[tauri::command]
 pub async fn generate_thumbnails_for(
+    app: AppHandle,
     db: State<'_, Arc<Database>>,
     file_ids: Vec<String>,
 ) -> Result<Vec<(String, String)>, String> {
     let db_ref = db.inner().clone();
+    let thumb_dir = thumbs_dir(&app);
 
     let files: Vec<(String, String, String)> = db_ref.with_conn(|conn| {
         let placeholders: Vec<String> = file_ids.iter().enumerate()
@@ -302,10 +314,11 @@ pub async fn generate_thumbnails_for(
     let mut results = Vec::new();
     for (id, file_path, media_type) in &files {
         let path = Path::new(file_path);
+        let thumb_path = thumb_dir.join(format!("{}.jpg", id));
         let thumb = if media_type == "video" {
-            make_video_thumbnail(path)
+            make_video_thumbnail(path, &thumb_path)
         } else {
-            make_thumbnail_fast(path)
+            make_thumbnail_fast(path, &thumb_path)
         };
         if let Some(thumb) = thumb {
             db_ref.with_conn(|conn| {
@@ -317,8 +330,4 @@ pub async fn generate_thumbnails_for(
     }
 
     Ok(results)
-}
-
-fn get_thumbnail_dir(_app: &AppHandle) -> std::path::PathBuf {
-    std::env::temp_dir().join("smart_category_thumbs")
 }

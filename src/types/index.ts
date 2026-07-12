@@ -277,6 +277,51 @@ export interface GpsMediaItem {
   date_taken: string | null;
 }
 
+// NAS upload
+export interface NasConfig {
+  url: string;
+  account: string;
+  verify_tls: boolean;
+  dest_root: string;
+  organize_by_date: boolean;
+}
+
+export interface NasStatus {
+  connected: boolean;
+  account: string | null;
+  url: string | null;
+}
+
+export interface NasEntry {
+  name: string;
+  path: string;
+  is_dir: boolean;
+}
+
+export interface NasUploadProgress {
+  phase: "uploading" | "complete" | "cancelled";
+  total: number;
+  current: number;
+  current_file: string;
+  uploaded: number;
+  skipped: number;
+  failed: number;
+}
+
+export interface FailedUpload {
+  file_name: string;
+  error: string;
+}
+
+export interface NasUploadResult {
+  total: number;
+  uploaded: number;
+  skipped: number;
+  failed: FailedUpload[];
+  cancelled: boolean;
+  ledger_failures: number;
+}
+
 export type ViewMode = "grid" | "list";
 export type AppView =
   | "dashboard"
@@ -293,4 +338,5 @@ export type AppView =
   | "settings"
   | "tags"
   | "albums"
-  | "map";
+  | "map"
+  | "nas";

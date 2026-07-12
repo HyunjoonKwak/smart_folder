@@ -65,6 +65,10 @@ interface AppState {
   searchQuery: string;
   setSearchQuery: (query: string) => void;
 
+  // NAS upload ledger (media ids already uploaded to the NAS)
+  nasUploadedIds: Set<string>;
+  setNasUploadedIds: (ids: Set<string>) => void;
+
   // Theme
   theme: "light" | "dark" | "system";
   setTheme: (theme: "light" | "dark" | "system") => void;
@@ -128,6 +132,9 @@ export const useAppStore = create<AppState>((set) => ({
 
   searchQuery: "",
   setSearchQuery: (query) => set({ searchQuery: query }),
+
+  nasUploadedIds: new Set(),
+  setNasUploadedIds: (ids) => set({ nasUploadedIds: ids }),
 
   theme: "system",
   setTheme: (theme) => set({ theme }),

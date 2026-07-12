@@ -3,6 +3,8 @@ import { invoke } from "@tauri-apps/api/core";
 import { open } from "@tauri-apps/plugin-dialog";
 import { useTranslation } from "react-i18next";
 import { formatFileSize, formatDate } from "@/utils/format";
+import { thumbSrc } from "@/utils/media";
+import { toast } from "@/stores/toastStore";
 import type { MediaFile, MediaListResponse } from "@/types";
 import {
   ScanSearch,
@@ -352,8 +354,9 @@ export function ReviewView() {
           (result.failed > 0 ? ` (${result.failed}개 실패)` : ""),
       );
       await loadFiles();
-    } catch {
+    } catch (e) {
       setTrashResult("휴지통 이동 실패");
+      toast.error(`휴지통 이동에 실패했습니다: ${e}`);
     }
     setTrashing(false);
   };
@@ -542,10 +545,10 @@ export function ReviewView() {
                     : "opacity-100"
                 }`}
               />
-            ) : current?.thumbnail ? (
+            ) : thumbSrc(current?.thumbnail) ? (
               <img
-                src={`data:image/jpeg;base64,${current.thumbnail}`}
-                alt={current.file_name}
+                src={thumbSrc(current?.thumbnail)!}
+                alt={current?.file_name}
                 className="max-h-full max-w-full object-contain blur-md opacity-50"
               />
             ) : (
@@ -698,9 +701,9 @@ export function ReviewView() {
                           : "opacity-60 hover:opacity-90"
                   }`}
                 >
-                  {file.thumbnail ? (
+                  {thumbSrc(file.thumbnail) ? (
                     <img
-                      src={`data:image/jpeg;base64,${file.thumbnail}`}
+                      src={thumbSrc(file.thumbnail)!}
                       alt=""
                       className="w-full h-full object-cover"
                     />

@@ -1,8 +1,12 @@
 import { useState, useEffect, useCallback, useRef, useMemo } from "react";
+import type { ReactNode } from "react";
 import { invoke, convertFileSrc } from "@tauri-apps/api/core";
+import { useVirtualizer } from "@tanstack/react-virtual";
 import { useAppStore } from "@/stores/appStore";
+import { toast } from "@/stores/toastStore";
 import { formatFileSize, formatDate } from "@/utils/format";
-import { ImageOff, Check, Play, FolderSearch, StopCircle, RefreshCw, ChevronDown, ChevronRight } from "lucide-react";
+import { thumbSrc } from "@/utils/media";
+import { ImageOff, Check, Play, FolderSearch, StopCircle, RefreshCw, ChevronDown, ChevronRight, UploadCloud } from "lucide-react";
 import type { MediaFile, MediaListResponse } from "@/types";
 
 export function GalleryGrid() {
@@ -24,7 +28,15 @@ export function GalleryGrid() {
   const mediaFilter = useAppStore((s) => s.mediaFilter);
   const groupBy = useAppStore((s) => s.groupBy);
   const refreshCounter = useAppStore((s) => s.refreshCounter);
-  const searchQuery = useAppStore((s) => s.searchQuery);
+  const nasUploadedIds = useAppStore((s) => s.nasUploadedIds);
+  const searchQueryRaw = useAppStore((s) => s.searchQuery);
+
+  // Debounce the title-bar search so we don't hit SQLite on every keystroke
+  const [searchQuery, setSearchQueryDebounced] = useState(searchQueryRaw);
+  useEffect(() => {
+    const timer = setTimeout(() => setSearchQueryDebounced(searchQueryRaw), 300);
+    return () => clearTimeout(timer);
+  }, [searchQueryRaw]);
   const scanStartTime = useRef<number | null>(null);
 
   // Track scan start time
@@ -51,7 +63,7 @@ export function GalleryGrid() {
     return `약 ${Math.floor(remaining / 3600)}시간 ${Math.ceil((remaining % 3600) / 60)}분 남음`;
   }, [scanProgress]);
 
-  const pageSize = groupBy !== "none" ? 2000 : 500;
+  const pageSize = groupBy !== "none" ? 2000 : 1000;
 
   const loadFiles = useCallback(async () => {
     setLoading(true);
@@ -59,14 +71,14 @@ export function GalleryGrid() {
       const result = await invoke<MediaListResponse>("get_media_list", {
         folderPath: selectedFolder,
         mediaType: mediaFilter === "all" ? null : mediaFilter,
-        searchQuery: searchQuery || null,
+        searchQuery: searchQuery.trim() || null,
         offset: 0,
         limit: pageSize,
       });
       setFiles(result.files);
       setTotal(result.total);
-    } catch {
-      // Handle error silently
+    } catch (e) {
+      toast.error(`미디어 목록을 불러오지 못했습니다: ${e}`);
     }
     setLoading(false);
   }, [selectedFolder, mediaFilter, searchQuery, refreshCounter, pageSize]);
@@ -78,36 +90,26 @@ export function GalleryGrid() {
       const result = await invoke<MediaListResponse>("get_media_list", {
         folderPath: selectedFolder,
         mediaType: mediaFilter === "all" ? null : mediaFilter,
-        searchQuery: searchQuery || null,
+        searchQuery: searchQuery.trim() || null,
         offset: files.length,
         limit: pageSize,
       });
       setFiles((prev) => [...prev, ...result.files]);
-    } catch {
-      // Handle error
+      // Safety: an empty page means the end regardless of the reported total
+      if (result.files.length === 0) {
+        setTotal(files.length);
+      }
+    } catch (e) {
+      toast.error(`미디어 목록을 불러오지 못했습니다: ${e}`);
     }
     setLoading(false);
   }, [files.length, total, loading, selectedFolder, mediaFilter, searchQuery, pageSize]);
 
+  // refreshCounter is a loadFiles dependency, so Phase 1 batch refreshes
+  // re-run this with current folder/filter/search values (no stale closure)
   useEffect(() => {
     loadFiles();
   }, [loadFiles, isScanning]);
-
-  // Reload when refreshCounter changes (triggered by Phase 1 batches)
-  useEffect(() => {
-    if (refreshCounter > 0) {
-      invoke<MediaListResponse>("get_media_list", {
-        folderPath: selectedFolder,
-        mediaType: mediaFilter === "all" ? null : mediaFilter,
-        searchQuery: searchQuery || null,
-        offset: 0,
-        limit: 500,
-      }).then((result) => {
-        setFiles(result.files);
-        setTotal(result.total);
-      }).catch(() => {});
-    }
-  }, [refreshCounter]);
 
   const handleOpenFile = useCallback((file: MediaFile) => {
     setPreviewFile(file);
@@ -221,8 +223,16 @@ export function GalleryGrid() {
       }`}
       onClick={() => handleOpenFile(file)}
     >
-      <div className="aspect-square bg-bg-secondary flex items-center justify-center">
+      <div className="aspect-square bg-bg-secondary flex items-center justify-center relative">
         <Thumbnail file={file} size={200} />
+        {nasUploadedIds.has(file.id) && (
+          <div
+            className="absolute bottom-1.5 right-1.5 bg-emerald-500/90 rounded-full p-1"
+            title="NAS에 업로드됨"
+          >
+            <UploadCloud size={10} className="text-white" />
+          </div>
+        )}
       </div>
       <div
         className={`absolute top-2 left-2 w-5 h-5 rounded-full flex items-center justify-center transition-opacity ${
@@ -243,7 +253,7 @@ export function GalleryGrid() {
         <p className="text-[10px] text-text-secondary mt-0.5">{formatFileSize(file.file_size)}</p>
       </div>
     </div>
-  ), [selectedMediaIds, toggleMediaSelection, handleOpenFile]);
+  ), [selectedMediaIds, toggleMediaSelection, handleOpenFile, nasUploadedIds]);
 
   useEffect(() => {
     window.addEventListener("keydown", handleKeyDown);
@@ -459,30 +469,14 @@ export function GalleryGrid() {
 
   return (
     <div className="flex-1 flex flex-col overflow-hidden">
-    {statusBar}
-    <div ref={containerRef} className="flex-1 overflow-y-auto p-3">
-      <div className="grid grid-cols-[repeat(auto-fill,minmax(160px,1fr))] gap-2">
-        {files.map(renderFileCard)}
-      </div>
-
-      {files.length < total && (
-        <div className="flex justify-center py-4">
-          <button
-            onClick={loadMore}
-            disabled={loading}
-            className="px-6 py-2 rounded-md text-xs font-medium bg-accent/10 text-accent hover:bg-accent/20 transition-colors disabled:opacity-50"
-          >
-            {loading ? "로딩 중..." : `더 보기 (${files.length.toLocaleString()} / ${total.toLocaleString()})`}
-          </button>
-        </div>
-      )}
-
-      {loading && files.length === 0 && (
-        <div className="flex justify-center py-8">
-          <div className="w-6 h-6 border-2 border-accent border-t-transparent rounded-full animate-spin" />
-        </div>
-      )}
-
+      {statusBar}
+      <VirtualCardGrid
+        files={files}
+        total={total}
+        loading={loading}
+        loadMore={loadMore}
+        renderFileCard={renderFileCard}
+      />
       {previewFile && (
         <PreviewModal
           file={previewFile}
@@ -490,21 +484,128 @@ export function GalleryGrid() {
         />
       )}
     </div>
+  );
+}
+
+const GRID_GAP = 8;
+const MIN_CARD_WIDTH = 160;
+const GRID_PADDING = 12;
+const CARD_INFO_HEIGHT = 44;
+
+// Row-based virtualization: only the visible rows exist in the DOM, so the
+// gallery stays smooth with tens of thousands of loaded items
+function VirtualCardGrid({
+  files,
+  total,
+  loading,
+  loadMore,
+  renderFileCard,
+}: {
+  files: MediaFile[];
+  total: number;
+  loading: boolean;
+  loadMore: () => void;
+  renderFileCard: (file: MediaFile) => ReactNode;
+}) {
+  const scrollRef = useRef<HTMLDivElement>(null);
+  const [width, setWidth] = useState(0);
+
+  useEffect(() => {
+    const el = scrollRef.current;
+    if (!el) return;
+    const observer = new ResizeObserver(() => setWidth(el.clientWidth));
+    observer.observe(el);
+    setWidth(el.clientWidth);
+    return () => observer.disconnect();
+  }, []);
+
+  const innerWidth = Math.max(0, width - GRID_PADDING * 2);
+  const cols = Math.max(
+    1,
+    Math.floor((innerWidth + GRID_GAP) / (MIN_CARD_WIDTH + GRID_GAP))
+  );
+  const cardWidth =
+    innerWidth > 0 ? (innerWidth - (cols - 1) * GRID_GAP) / cols : MIN_CARD_WIDTH;
+  const rowHeight = cardWidth + CARD_INFO_HEIGHT + GRID_GAP;
+  const rowCount = Math.ceil(files.length / cols);
+
+  const virtualizer = useVirtualizer({
+    count: rowCount,
+    getScrollElement: () => scrollRef.current,
+    estimateSize: () => rowHeight,
+    overscan: 4,
+  });
+
+  useEffect(() => {
+    virtualizer.measure();
+  }, [rowHeight, virtualizer]);
+
+  const virtualRows = virtualizer.getVirtualItems();
+  const lastVisibleRow = virtualRows.length
+    ? virtualRows[virtualRows.length - 1].index
+    : -1;
+
+  // Auto-fetch the next page as the user approaches the end
+  useEffect(() => {
+    if (lastVisibleRow >= rowCount - 3 && files.length < total && !loading) {
+      loadMore();
+    }
+  }, [lastVisibleRow, rowCount, files.length, total, loading, loadMore]);
+
+  return (
+    <div ref={scrollRef} className="flex-1 overflow-y-auto p-3">
+      <div style={{ height: virtualizer.getTotalSize(), position: "relative" }}>
+        {virtualRows.map((row) => (
+          <div
+            key={row.key}
+            style={{
+              position: "absolute",
+              top: 0,
+              left: 0,
+              right: 0,
+              transform: `translateY(${row.start}px)`,
+              display: "flex",
+              gap: GRID_GAP,
+            }}
+          >
+            {files
+              .slice(row.index * cols, row.index * cols + cols)
+              .map((file) => (
+                <div key={file.id} style={{ width: cardWidth }}>
+                  {renderFileCard(file)}
+                </div>
+              ))}
+          </div>
+        ))}
+      </div>
+      {loading && (
+        <div className="flex justify-center py-4">
+          <div className="w-5 h-5 border-2 border-accent border-t-transparent rounded-full animate-spin" />
+        </div>
+      )}
+      {!loading && files.length >= total && total > 0 && (
+        <p className="text-center text-[10px] text-text-secondary/60 py-3">
+          {total.toLocaleString()}개 모두 표시됨
+        </p>
+      )}
     </div>
   );
 }
 
 function Thumbnail({ file }: { file: MediaFile; size?: number }) {
+  const [thumbError, setThumbError] = useState(false);
   const [error, setError] = useState(false);
 
-  // Priority: 1) base64 thumbnail, 2) original file via asset protocol, 3) placeholder
-  if (file.thumbnail) {
+  // Priority: 1) cached thumbnail file, 2) original file via asset protocol, 3) placeholder
+  const thumb = thumbSrc(file.thumbnail);
+  if (thumb && !thumbError) {
     return (
       <img
-        src={`data:image/jpeg;base64,${file.thumbnail}`}
+        src={thumb}
         alt={file.file_name}
         className="w-full h-full object-cover"
         loading="lazy"
+        onError={() => setThumbError(true)}
       />
     );
   }

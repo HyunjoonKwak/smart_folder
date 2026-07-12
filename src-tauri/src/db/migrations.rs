@@ -133,6 +133,24 @@ pub fn run(conn: &Connection) -> Result<(), rusqlite::Error> {
             PRIMARY KEY (group_id, media_id)
         );
 
+        CREATE TABLE IF NOT EXISTS app_settings (
+            key TEXT PRIMARY KEY,
+            value TEXT NOT NULL
+        );
+
+        CREATE TABLE IF NOT EXISTS nas_uploads (
+            id TEXT PRIMARY KEY,
+            media_id TEXT,
+            sha256 TEXT,
+            source_path TEXT NOT NULL,
+            remote_path TEXT NOT NULL,
+            uploaded_at TEXT NOT NULL
+        );
+
+        CREATE INDEX IF NOT EXISTS idx_nas_uploads_sha256 ON nas_uploads(sha256);
+        CREATE INDEX IF NOT EXISTS idx_nas_uploads_media ON nas_uploads(media_id);
+        CREATE UNIQUE INDEX IF NOT EXISTS idx_nas_uploads_unique ON nas_uploads(media_id, remote_path);
+
         CREATE INDEX IF NOT EXISTS idx_media_sha256 ON media_files(sha256_hash);
         CREATE INDEX IF NOT EXISTS idx_media_phash ON media_files(phash);
         CREATE INDEX IF NOT EXISTS idx_media_quick_hash ON media_files(quick_hash);
@@ -227,6 +245,16 @@ pub fn run(conn: &Connection) -> Result<(), rusqlite::Error> {
     let _ = conn.execute_batch("ALTER TABLE media_files ADD COLUMN thumbnail TEXT");
     // Remove old column data if migrating
     let _ = conn.execute_batch("UPDATE media_files SET thumbnail = NULL WHERE thumbnail IS NULL AND scan_phase = 0");
+
+    // Migrate legacy inline base64 thumbnails to the file-based cache:
+    // clear them and reset scan_phase so Phase 1 regenerates thumbnail files.
+    // Cache paths always end in '.jpg'; the base64 alphabet has no '.'
+    // (a leading-'/' check would fail — base64 JPEG starts with "/9j/").
+    // Idempotent: already-migrated rows end in '.jpg' and are untouched.
+    let _ = conn.execute_batch(
+        "UPDATE media_files SET thumbnail = NULL, scan_phase = 0
+         WHERE thumbnail IS NOT NULL AND thumbnail NOT LIKE '%.jpg'",
+    );
 
     Ok(())
 }

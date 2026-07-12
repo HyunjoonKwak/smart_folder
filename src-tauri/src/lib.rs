@@ -4,6 +4,7 @@ mod ai;
 mod commands;
 mod core;
 mod db;
+mod nas;
 
 use std::sync::Arc;
 use tokio::sync::RwLock;
@@ -37,6 +38,7 @@ pub fn run() {
             let database =
                 Database::new(&app_data_dir).expect("Failed to initialize database");
             app.manage(Arc::new(database));
+            app.manage(commands::nas::NasState::default());
 
             // Load config
             let config = AppConfig::load(&app_data_dir.join("config.yaml"));
@@ -153,6 +155,16 @@ pub fn run() {
             commands::media::search_media,
             // GPS
             commands::media::get_gps_media,
+            // NAS upload
+            commands::nas::nas_get_config,
+            commands::nas::nas_connect,
+            commands::nas::nas_disconnect,
+            commands::nas::nas_status,
+            commands::nas::nas_list_folders,
+            commands::nas::nas_create_folder,
+            commands::nas::nas_upload,
+            commands::nas::nas_cancel_upload,
+            commands::nas::nas_uploaded_media_ids,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
