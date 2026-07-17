@@ -98,14 +98,17 @@ export function SettingsView() {
     updateConfig({ watch });
   };
 
-  // Scan exclusions (line-based editors)
+  // Scan exclusions (line-based editors) — drafts re-seeded when config
+  // arrives, adjusted during render per React guidance
   const [excludeNamesDraft, setExcludeNamesDraft] = useState("");
   const [excludeSuffixesDraft, setExcludeSuffixesDraft] = useState("");
-  useEffect(() => {
-    if (!config?.scan) return;
-    setExcludeNamesDraft(config.scan.exclude_dir_names.join("\n"));
-    setExcludeSuffixesDraft(config.scan.exclude_suffixes.join("\n"));
-  }, [config?.scan]);
+  const [scanSeedKey, setScanSeedKey] = useState<string | null>(null);
+  const scanKey = config?.scan ? JSON.stringify(config.scan) : null;
+  if (scanKey !== null && scanKey !== scanSeedKey) {
+    setScanSeedKey(scanKey);
+    setExcludeNamesDraft(config!.scan.exclude_dir_names.join("\n"));
+    setExcludeSuffixesDraft(config!.scan.exclude_suffixes.join("\n"));
+  }
 
   const handleSaveScanExclusions = () => {
     const parseLines = (text: string) =>

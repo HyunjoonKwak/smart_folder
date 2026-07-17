@@ -59,10 +59,7 @@ export function TreePanel() {
   const [browseTick, setBrowseTick] = useState(0);
 
   useEffect(() => {
-    if (!browsePath) {
-      setBrowseEntries([]);
-      return;
-    }
+    if (!browsePath) return;
     let cancelled = false;
     invoke<DirEntry[]>("list_directory", { path: browsePath })
       .then((entries) => {
