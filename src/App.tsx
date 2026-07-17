@@ -7,19 +7,13 @@ import { NavRail } from "@/components/layout/NavRail";
 import { Sidebar } from "@/components/sidebar/Sidebar";
 import { viewToArea } from "@/utils/navigation";
 import { DashboardView } from "@/components/dashboard/DashboardView";
-import { GalleryGrid } from "@/components/gallery/GalleryGrid";
-import { DuplicatesView } from "@/components/duplicates/DuplicatesView";
-import { OrganizeView } from "@/components/organize/OrganizeView";
-import { HistoryView } from "@/components/organize/HistoryView";
-import { FolderTreeView } from "@/components/foldertree/FolderTreeView";
-import { BcutView } from "@/components/bcut/BcutView";
-import { ReviewView } from "@/components/review/ReviewView";
-import { SyncView } from "@/components/sync/SyncView";
+import { LibraryView } from "@/components/library/LibraryView";
+import { CullingWorkspace } from "@/components/culling/CullingWorkspace";
+import { OrganizeHub } from "@/components/organize/OrganizeHub";
 import { CleanupWizardView } from "@/components/cleanup/CleanupWizardView";
 import { SettingsView } from "@/components/settings/SettingsView";
 import { TagManager } from "@/components/tags/TagManager";
 import { AlbumManager } from "@/components/albums/AlbumManager";
-import { MapView } from "@/components/map/MapView";
 import { NasUploadView } from "@/components/nas/NasUploadView";
 import { Toasts } from "@/components/common/Toasts";
 import { resumePhase1IfPending } from "@/utils/phase1";
@@ -88,22 +82,18 @@ function App() {
       case "dashboard":
         return <DashboardView />;
       case "gallery":
-        return <GalleryGrid />;
+      case "map":
+        return <LibraryView />;
       case "duplicates":
-        return <DuplicatesView />;
+      case "bcut":
+      case "review":
+        return <CullingWorkspace />;
       case "organize":
       case "before-after":
-        return <OrganizeView />;
-      case "history":
-        return <HistoryView />;
       case "foldertree":
-        return <FolderTreeView />;
-      case "bcut":
-        return <BcutView />;
-      case "review":
-        return <ReviewView />;
       case "sync":
-        return <SyncView />;
+      case "history":
+        return <OrganizeHub />;
       case "cleanup":
         return <CleanupWizardView />;
       case "settings":
@@ -112,8 +102,6 @@ function App() {
         return <TagManager />;
       case "albums":
         return <AlbumManager />;
-      case "map":
-        return <MapView />;
       case "nas":
         return <NasUploadView />;
       default:
