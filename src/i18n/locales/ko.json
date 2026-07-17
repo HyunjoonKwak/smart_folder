@@ -219,7 +219,8 @@
     "unmarked": "미정",
     "progress": "진행률",
     "trashMarked": "마킹된 파일 삭제",
-    "shortcuts": "단축키"
+    "shortcuts": "단축키",
+    "videoHint": "영상 — Quick Look으로 재생"
   },
   "folderTree": {
     "tree": "폴더 트리",

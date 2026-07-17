@@ -19,6 +19,7 @@ import {
   AlertTriangle,
   Zap,
   Crown,
+  Play,
 } from "lucide-react";
 
 type MarkState = "keep" | "discard" | "unmarked";
@@ -94,9 +95,11 @@ export function ReviewView() {
     if (!folderPath) return;
     setLoading(true);
     try {
+      // Photos AND videos — video previews show the first frame,
+      // Quick Look (Space on the eye button) plays them
       const result = await invoke<MediaListResponse>("get_media_list", {
         folderPath,
-        mediaType: "image",
+        mediaType: null,
         offset: 0,
         limit: 5000,
       });
@@ -106,8 +109,10 @@ export function ReviewView() {
       setCurrentIdx(0);
       setPreviewCache(new Map());
 
-      // Compute quality scores
-      const mediaIds = result.files.map((f) => f.id);
+      // Compute quality scores (images only — not meaningful for videos)
+      const mediaIds = result.files
+        .filter((f) => f.media_type === "image")
+        .map((f) => f.id);
       if (mediaIds.length > 0) {
         try {
           const scores = await invoke<Record<string, { sharpness: number; exposure: number; total: number }>>(
@@ -604,6 +609,14 @@ export function ReviewView() {
             >
               <Eye size={15} />
             </button>
+
+            {/* Video indicator — Quick Look plays it */}
+            {current?.media_type === "video" && (
+              <div className="absolute top-4 left-1/2 -translate-x-1/2 flex items-center gap-1.5 px-3 py-1.5 rounded-full text-[10px] font-bold text-white/90 bg-white/15 backdrop-blur-sm">
+                <Play size={11} />
+                {t("review.videoHint", "영상 — Quick Look으로 재생")}
+              </div>
+            )}
 
             {/* Low quality warning icon */}
             {currentQuality && currentQuality.total < 40 && (

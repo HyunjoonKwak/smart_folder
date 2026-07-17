@@ -219,7 +219,8 @@
     "unmarked": "Unmarked",
     "progress": "Progress",
     "trashMarked": "Trash Marked Files",
-    "shortcuts": "Shortcuts"
+    "shortcuts": "Shortcuts",
+    "videoHint": "Video — plays in Quick Look"
   },
   "folderTree": {
     "tree": "Folder Tree",
