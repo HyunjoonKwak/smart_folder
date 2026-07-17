@@ -44,6 +44,8 @@ pub struct DupMember {
     pub width: Option<i32>,
     pub height: Option<i32>,
     pub date_taken: Option<String>,
+    pub thumbnail: Option<String>,
+    pub media_type: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -522,7 +524,7 @@ pub async fn get_duplicate_groups(db: State<'_, Arc<Database>>) -> Result<DupSum
         for (group_id, match_type, sim) in &groups_raw {
             let mut mem_stmt = conn.prepare(
                 "SELECT dm.media_id, dm.is_preferred, mf.file_path, mf.file_name, mf.file_size,
-                        mf.width, mf.height, me.date_taken
+                        mf.width, mf.height, me.date_taken, mf.thumbnail, mf.media_type
                  FROM duplicate_members dm
                  JOIN media_files mf ON dm.media_id = mf.id
                  LEFT JOIN media_exif me ON mf.id = me.media_id
@@ -538,6 +540,8 @@ pub async fn get_duplicate_groups(db: State<'_, Arc<Database>>) -> Result<DupSum
                     width: row.get(5)?,
                     height: row.get(6)?,
                     date_taken: row.get(7)?,
+                    thumbnail: row.get(8)?,
+                    media_type: row.get(9)?,
                 })
             })?.collect::<Result<Vec<_>, _>>()?;
 

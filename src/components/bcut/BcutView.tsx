@@ -3,6 +3,7 @@ import { invoke } from "@tauri-apps/api/core";
 import { formatFileSize, formatDate } from "@/utils/format";
 import { useBcutProgress } from "@/hooks/useTauriEvents";
 import { thumbSrc } from "@/utils/media";
+import { MemberPreview } from "@/components/culling/MemberPreview";
 import { toast } from "@/stores/toastStore";
 import {
   Focus,
@@ -450,26 +451,17 @@ export function BcutView() {
                             : "ring-1 ring-border hover:ring-accent/30 hover:shadow-md"
                         }`}
                       >
-                        {/* Image area */}
+                        {/* Image area — high-res preview, click to Quick Look */}
                         <div className="relative aspect-[4/3] bg-[#0a0a0a] overflow-hidden">
-                          {thumbSrc(member.thumbnail) ? (
-                            <img
-                              src={thumbSrc(member.thumbnail)!}
-                              alt={member.file_name}
-                              className={`w-full h-full object-cover transition-all duration-200 ${
-                                isBest
-                                  ? ""
-                                  : "opacity-60 group-hover:opacity-90"
-                              }`}
-                            />
-                          ) : (
-                            <div className="w-full h-full flex items-center justify-center">
-                              <Focus
-                                size={20}
-                                className="text-white/10"
-                              />
-                            </div>
-                          )}
+                          <MemberPreview
+                            filePath={member.file_path}
+                            thumbnail={member.thumbnail}
+                            alt={member.file_name}
+                            fit="cover"
+                            dimmed={!isBest}
+                            className="absolute inset-0"
+                            onClick={() => handlePreview(member.file_path)}
+                          />
 
                           {/* Number badge */}
                           <div

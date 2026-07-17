@@ -1,6 +1,8 @@
 import { useState, useEffect, useCallback, useMemo } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { formatFileSize, formatDate } from "@/utils/format";
+import { thumbSrc } from "@/utils/media";
+import { MemberPreview } from "@/components/culling/MemberPreview";
 import { toast } from "@/stores/toastStore";
 import { useDuplicateProgress } from "@/hooks/useTauriEvents";
 import {
@@ -26,6 +28,8 @@ interface DupMember {
   width: number | null;
   height: number | null;
   date_taken: string | null;
+  thumbnail: string | null;
+  media_type: string;
 }
 
 interface DupGroup {
@@ -53,6 +57,8 @@ export function DuplicatesView() {
   const [summary, setSummary] = useState<DupSummary | null>(null);
   const [selectedGroup, setSelectedGroup] = useState<DupGroup | null>(null);
   const [selectedIdx, setSelectedIdx] = useState(0);
+  // Member currently shown large in the preview pane
+  const [focusIdx, setFocusIdx] = useState(0);
   const [scanning, setScanning] = useState(false);
   const [trashing, setTrashing] = useState(false);
   const [trashResult, setTrashResult] = useState<string | null>(null);
@@ -205,9 +211,20 @@ export function DuplicatesView() {
 
       if (e.code === "Space") {
         e.preventDefault();
-        if (selectedGroup.members.length > 0) {
-          handlePreview(selectedGroup.members[0].file_path);
+        const focused = selectedGroup.members[focusIdx];
+        if (focused) {
+          handlePreview(focused.file_path);
         }
+      }
+      if (e.code === "ArrowLeft" || e.code === "KeyH") {
+        e.preventDefault();
+        setFocusIdx((i) => Math.max(0, i - 1));
+      }
+      if (e.code === "ArrowRight" || e.code === "KeyL") {
+        e.preventDefault();
+        setFocusIdx((i) =>
+          Math.min(selectedGroup.members.length - 1, i + 1),
+        );
       }
       if (e.code === "ArrowDown" || e.code === "KeyJ") {
         e.preventDefault();
@@ -222,8 +239,13 @@ export function DuplicatesView() {
         setSelectedGroup(groups[prev]);
       }
     },
-    [summary, selectedGroup, selectedIdx]
+    [summary, selectedGroup, selectedIdx, focusIdx]
   );
+
+  // Reset member focus when the group changes
+  useEffect(() => {
+    setFocusIdx(0);
+  }, [selectedGroup?.id]);
 
   useEffect(() => {
     window.addEventListener("keydown", handleKeyDown);
@@ -421,124 +443,163 @@ export function DuplicatesView() {
           </div>
 
           {/* Detail view */}
-          {selectedGroup && (
-            <div className="flex-1 p-4 overflow-y-auto">
+          {selectedGroup && (() => {
+            const focused =
+              selectedGroup.members[
+                Math.min(focusIdx, selectedGroup.members.length - 1)
+              ];
+            return (
+            <div className="flex-1 flex flex-col overflow-hidden">
               {/* Group header */}
-              <div className="flex items-center gap-2 mb-2">
-                <AlertTriangle size={16} className="text-warning" />
-                <span className="text-sm font-medium text-text-primary">
+              <div className="px-4 py-2 border-b border-border/50 shrink-0 flex items-center gap-2">
+                <AlertTriangle size={14} className="text-warning shrink-0" />
+                <span className="text-xs font-medium text-text-primary">
                   {selectedGroup.match_type === "exact"
                     ? `완전 동일 파일 (${selectedGroup.members.length}개)`
                     : `유사 이미지 (${Math.round((selectedGroup.similarity_score ?? 0) * 100)}% 일치)`}
                 </span>
+                <span className="text-[9px] text-text-secondary/50 ml-auto">
+                  ←/→ 사진 이동 · Space 확대 · 아래에서 유지할 사진 선택
+                </span>
               </div>
 
-              {/* Explanation */}
-              <p className="text-[10px] text-text-secondary mb-4 bg-bg-secondary/50 rounded-md px-3 py-2">
-                <Shield size={10} className="inline text-success mr-1 -mt-0.5" />
-                <strong className="text-success">유지</strong> 표시된 파일은 남기고,
-                <Trash2 size={10} className="inline text-danger mx-1 -mt-0.5" />
-                <strong className="text-danger">삭제 예정</strong> 파일은 상단
-                &quot;휴지통으로 이동&quot; 시 삭제됩니다.
-                다른 파일을 남기려면 해당 파일의 &quot;이것을 유지&quot;를 누르세요.
-              </p>
-
-              {/* Member list */}
-              <div className="space-y-2">
-                {selectedGroup.members.map((member) => (
+              {/* Large preview — pick while actually seeing the photo */}
+              {focused && (
+                <MemberPreview
+                  key={focused.media_id}
+                  filePath={focused.file_path}
+                  mediaType={focused.media_type}
+                  thumbnail={focused.thumbnail}
+                  alt={focused.file_name}
+                  fit="contain"
+                  className="flex-1 min-h-0 bg-black/90"
+                  onClick={() => handlePreview(focused.file_path)}
+                >
+                  {/* Status badge */}
                   <div
-                    key={member.media_id}
-                    className={`rounded-lg border p-3 transition-colors ${
-                      member.is_preferred
-                        ? "border-success bg-success/5"
-                        : "border-danger/30 bg-danger/5"
+                    className={`absolute top-3 left-3 flex items-center gap-1 px-2.5 py-1 rounded-full text-[10px] font-bold backdrop-blur-sm ${
+                      focused.is_preferred
+                        ? "bg-success/90 text-white"
+                        : "bg-danger/80 text-white"
                     }`}
                   >
-                    <div className="flex items-center gap-3">
-                      {/* Number + status badge */}
-                      <div className={`w-7 h-7 rounded-full flex items-center justify-center shrink-0 ${
-                        member.is_preferred ? "bg-success text-white" : "bg-danger/20 text-danger"
-                      }`}>
-                        {member.is_preferred ? (
-                          <Check size={14} />
-                        ) : (
-                          <Trash2 size={12} />
-                        )}
-                      </div>
+                    {focused.is_preferred ? (
+                      <>
+                        <Shield size={10} /> 유지
+                      </>
+                    ) : (
+                      <>
+                        <Trash2 size={10} /> 삭제 예정
+                      </>
+                    )}
+                  </div>
+                  {/* Keep-this button overlay */}
+                  {!focused.is_preferred && (
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        handleSetPreferred(selectedGroup.id, focused.media_id);
+                      }}
+                      className="absolute bottom-3 left-1/2 -translate-x-1/2 flex items-center gap-1.5 px-4 py-1.5 rounded-full text-[11px] font-bold bg-accent text-white hover:bg-accent-hover shadow-lg transition-colors"
+                    >
+                      <Shield size={11} />
+                      이것을 유지
+                    </button>
+                  )}
+                </MemberPreview>
+              )}
 
-                      {/* File icon */}
-                      <div className={`w-10 h-10 rounded-md flex items-center justify-center shrink-0 ${
-                        member.is_preferred ? "bg-success/10" : "bg-danger/10"
-                      }`}>
-                        <FileImage size={20} className={member.is_preferred ? "text-success" : "text-danger/50"} />
-                      </div>
-
-                      {/* File info */}
-                      <div className="flex-1 min-w-0">
-                        <p className={`text-xs font-medium truncate ${
-                          member.is_preferred ? "text-text-primary" : "text-text-secondary line-through decoration-danger/30"
-                        }`}>
-                          {member.file_name}
-                        </p>
-                        <p className="text-[10px] text-text-secondary truncate">
-                          {member.file_path}
-                        </p>
-                        <div className="flex gap-3 mt-1 text-[10px] text-text-secondary">
-                          <span>{formatFileSize(member.file_size)}</span>
-                          {member.width && member.height && (
-                            <span>{member.width}x{member.height}</span>
-                          )}
-                          {member.date_taken && (
-                            <span>{formatDate(member.date_taken)}</span>
-                          )}
-                        </div>
-                      </div>
-
-                      {/* Status label */}
-                      <div className="shrink-0">
-                        {member.is_preferred ? (
-                          <span className="flex items-center gap-1 text-[10px] text-success font-bold bg-success/10 px-2.5 py-1 rounded-full">
-                            <Shield size={10} /> 유지
-                          </span>
-                        ) : (
-                          <span className="flex items-center gap-1 text-[10px] text-danger font-bold bg-danger/10 px-2.5 py-1 rounded-full">
-                            <Trash2 size={10} /> 삭제 예정
-                          </span>
-                        )}
-                      </div>
-
-                      {/* Actions */}
-                      <div className="flex gap-1 shrink-0">
-                        {!member.is_preferred && (
-                          <button
-                            onClick={() => handleSetPreferred(selectedGroup.id, member.media_id)}
-                            className="px-2.5 py-1 rounded text-[10px] font-medium bg-accent text-white hover:bg-accent-hover transition-colors"
-                          >
-                            이것을 유지
-                          </button>
-                        )}
-                        <button
-                          onClick={() => handlePreview(member.file_path)}
-                          className="p-1.5 rounded hover:bg-bg-secondary transition-colors"
-                          title="미리보기"
-                        >
-                          <Eye size={14} className="text-text-secondary" />
-                        </button>
-                        <button
-                          onClick={() => handleOpenFile(member.file_path)}
-                          className="p-1.5 rounded hover:bg-bg-secondary transition-colors"
-                          title="Finder에서 보기"
-                        >
-                          <FolderOpen size={14} className="text-text-secondary" />
-                        </button>
-                      </div>
+              {/* Focused file info + actions */}
+              {focused && (
+                <div className="px-4 py-1.5 border-t border-border/50 shrink-0 flex items-center gap-3">
+                  <div className="flex-1 min-w-0">
+                    <p className="text-[11px] font-medium text-text-primary truncate">
+                      {focused.file_name}
+                    </p>
+                    <div className="flex gap-3 text-[9.5px] text-text-secondary truncate">
+                      <span className="truncate">{focused.file_path}</span>
                     </div>
                   </div>
-                ))}
+                  <div className="flex gap-3 text-[10px] text-text-secondary shrink-0 tabular-nums">
+                    <span>{formatFileSize(focused.file_size)}</span>
+                    {focused.width && focused.height && (
+                      <span>
+                        {focused.width}x{focused.height}
+                      </span>
+                    )}
+                    {focused.date_taken && (
+                      <span>{formatDate(focused.date_taken)}</span>
+                    )}
+                  </div>
+                  <div className="flex gap-1 shrink-0">
+                    <button
+                      onClick={() => handlePreview(focused.file_path)}
+                      className="p-1.5 rounded hover:bg-bg-secondary transition-colors"
+                      title="Quick Look (Space)"
+                    >
+                      <Eye size={13} className="text-text-secondary" />
+                    </button>
+                    <button
+                      onClick={() => handleOpenFile(focused.file_path)}
+                      className="p-1.5 rounded hover:bg-bg-secondary transition-colors"
+                      title="Finder에서 보기"
+                    >
+                      <FolderOpen size={13} className="text-text-secondary" />
+                    </button>
+                  </div>
+                </div>
+              )}
+
+              {/* Member thumbnail strip */}
+              <div className="px-4 py-2 border-t border-border/50 shrink-0 overflow-x-auto">
+                <div className="flex gap-2">
+                  {selectedGroup.members.map((member, mi) => {
+                    const isFocused = mi === Math.min(focusIdx, selectedGroup.members.length - 1);
+                    return (
+                      <button
+                        key={member.media_id}
+                        onClick={() => setFocusIdx(mi)}
+                        className={`relative w-24 h-[72px] rounded-md overflow-hidden shrink-0 bg-black/80 transition-all ${
+                          isFocused
+                            ? "ring-2 ring-accent"
+                            : member.is_preferred
+                              ? "ring-1 ring-success/60 opacity-80 hover:opacity-100"
+                              : "ring-1 ring-danger/40 opacity-60 hover:opacity-100"
+                        }`}
+                        title={member.file_name}
+                      >
+                        {thumbSrc(member.thumbnail) ? (
+                          <img
+                            src={thumbSrc(member.thumbnail)!}
+                            alt={member.file_name}
+                            className="w-full h-full object-cover"
+                          />
+                        ) : (
+                          <div className="w-full h-full flex items-center justify-center">
+                            <FileImage size={16} className="text-white/20" />
+                          </div>
+                        )}
+                        <div
+                          className={`absolute top-1 left-1 w-4 h-4 rounded-full flex items-center justify-center ${
+                            member.is_preferred
+                              ? "bg-success text-white"
+                              : "bg-danger/80 text-white"
+                          }`}
+                        >
+                          {member.is_preferred ? (
+                            <Check size={9} />
+                          ) : (
+                            <Trash2 size={8} />
+                          )}
+                        </div>
+                      </button>
+                    );
+                  })}
+                </div>
               </div>
 
               {/* Group actions */}
-              <div className="mt-4 flex gap-2">
+              <div className="px-4 py-2.5 border-t border-border/50 shrink-0 flex gap-2">
                 <button
                   onClick={() => handleTrashGroup(selectedGroup)}
                   disabled={trashing || selectedGroup.members.filter((m) => !m.is_preferred).length === 0}
@@ -556,7 +617,8 @@ export function DuplicatesView() {
                 </button>
               </div>
             </div>
-          )}
+            );
+          })()}
         </div>
       ) : null}
     </div>
