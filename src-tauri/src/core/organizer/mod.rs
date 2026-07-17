@@ -166,7 +166,7 @@ pub fn undo_moves(entries: &[UndoEntry]) -> Vec<(String, Result<(), String>)> {
 
     for entry in entries.iter().rev() {
         match entry.operation.as_str() {
-            "move" => {
+            "move" | "move_dir" => {
                 if let (Some(source), Some(target)) = (&entry.source_path, &entry.target_path) {
                     let result = fs::rename(target, source)
                         .or_else(|_| {

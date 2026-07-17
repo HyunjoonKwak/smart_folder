@@ -243,6 +243,8 @@ pub fn run(conn: &Connection) -> Result<(), rusqlite::Error> {
     // Safe column additions for existing databases
     let _ = conn.execute_batch("ALTER TABLE media_files ADD COLUMN scan_phase INTEGER NOT NULL DEFAULT 0");
     let _ = conn.execute_batch("ALTER TABLE media_files ADD COLUMN thumbnail TEXT");
+    // User comment on a photo/video (A-Cut inspector)
+    let _ = conn.execute_batch("ALTER TABLE media_files ADD COLUMN comment TEXT");
     // Remove old column data if migrating
     let _ = conn.execute_batch("UPDATE media_files SET thumbnail = NULL WHERE thumbnail IS NULL AND scan_phase = 0");
 

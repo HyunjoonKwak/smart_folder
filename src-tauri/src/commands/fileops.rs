@@ -738,3 +738,285 @@ pub async fn trash_review_files(file_paths: Vec<String>) -> Result<FileOpResult,
         errors: result.errors,
     })
 }
+
+// ---------------------------------------------------------------------------
+// Folder-level operations (A-Cut) — copy / move / rename / trash
+// ---------------------------------------------------------------------------
+
+use crate::core::undo as undo_core;
+use crate::db::Database;
+use std::sync::Arc;
+use tauri::State;
+
+/// Recursively copy a directory tree, counting files copied.
+fn copy_dir_all(src: &Path, dst: &Path, copied: &mut usize) -> std::io::Result<()> {
+    std::fs::create_dir_all(dst)?;
+    for entry in std::fs::read_dir(src)? {
+        let entry = entry?;
+        let target = dst.join(entry.file_name());
+        if entry.file_type()?.is_dir() {
+            copy_dir_all(&entry.path(), &target, copied)?;
+        } else {
+            std::fs::copy(entry.path(), &target)?;
+            *copied += 1;
+        }
+    }
+    Ok(())
+}
+
+/// Keep library rows pointing at the right place after a move/rename.
+fn sync_db_paths(db: &Arc<Database>, src: &str, dst: &str, is_dir: bool) {
+    let _ = db.with_conn(|conn| {
+        if is_dir {
+            let old_prefix = format!("{}/", src.trim_end_matches('/'));
+            let new_prefix = format!("{}/", dst.trim_end_matches('/'));
+            conn.execute(
+                "UPDATE media_files
+                 SET file_path = ?2 || SUBSTR(file_path, LENGTH(?1) + 1)
+                 WHERE file_path LIKE ?1 || '%'",
+                rusqlite::params![old_prefix, new_prefix],
+            )?;
+            conn.execute(
+                "UPDATE source_folders
+                 SET path = ?2 || SUBSTR(path, LENGTH(?1) + 1)
+                 WHERE path LIKE ?1 || '%'",
+                rusqlite::params![old_prefix, new_prefix],
+            )?;
+            conn.execute(
+                "UPDATE source_folders SET path = ?2 WHERE path = ?1",
+                rusqlite::params![src, dst],
+            )?;
+        } else {
+            conn.execute(
+                "UPDATE media_files SET file_path = ?2 WHERE file_path = ?1",
+                rusqlite::params![src, dst],
+            )?;
+        }
+        Ok(())
+    });
+}
+
+/// Recursively copy a directory (or a single file) into `target_dir`,
+/// resolving name conflicts. Returns the number of files copied.
+#[tauri::command]
+pub async fn copy_directory(source: String, target_dir: String) -> Result<FileOpResult, String> {
+    let src = Path::new(&source);
+    let target = Path::new(&target_dir);
+    if !src.exists() {
+        return Err("원본 경로가 존재하지 않습니다".into());
+    }
+    if !target.is_dir() {
+        return Err("대상이 폴더가 아닙니다".into());
+    }
+    if src.is_dir() && target.starts_with(src) {
+        return Err("대상 폴더가 원본 안에 있어 복사할 수 없습니다".into());
+    }
+    let file_name = src.file_name().ok_or("잘못된 원본 경로입니다")?;
+    let dest = resolve_conflict(&target.join(file_name));
+
+    let mut copied = 0usize;
+    let result = if src.is_dir() {
+        copy_dir_all(src, &dest, &mut copied)
+    } else {
+        std::fs::copy(src, &dest).map(|_| {
+            copied += 1;
+        })
+    };
+
+    match result {
+        Ok(()) => Ok(FileOpResult {
+            success: copied,
+            failed: 0,
+            errors: Vec::new(),
+        }),
+        Err(e) => Err(format!("복사 실패: {}", e)),
+    }
+}
+
+/// Move files or folders into `target_dir`. Cross-volume moves fall back to
+/// copy + delete. Every move is recorded in the undo journal, and library
+/// paths follow automatically.
+#[tauri::command]
+pub async fn move_paths(
+    db: State<'_, Arc<Database>>,
+    sources: Vec<String>,
+    target_dir: String,
+) -> Result<FileOpResult, String> {
+    let target = Path::new(&target_dir);
+    if !target.is_dir() {
+        return Err("대상이 폴더가 아닙니다".into());
+    }
+    let db_ref = db.inner().clone();
+
+    let batch_id = uuid::Uuid::new_v4().to_string();
+    let batch_name = "이동";
+    let mut success = 0usize;
+    let mut failed = 0usize;
+    let mut errors: Vec<String> = Vec::new();
+    let mut seq: i32 = 0;
+
+    for src_str in &sources {
+        let src = Path::new(src_str);
+        if !src.exists() {
+            failed += 1;
+            errors.push(format!("{}: 경로가 존재하지 않습니다", src_str));
+            continue;
+        }
+        let is_dir = src.is_dir();
+        if is_dir && target.starts_with(src) {
+            failed += 1;
+            errors.push(format!("{}: 대상이 원본 안에 있습니다", src_str));
+            continue;
+        }
+        let Some(name) = src.file_name() else {
+            failed += 1;
+            errors.push(format!("{}: 잘못된 경로", src_str));
+            continue;
+        };
+        let dest = resolve_conflict(&target.join(name));
+        let dest_str = dest.to_string_lossy().to_string();
+
+        let moved = std::fs::rename(src, &dest).or_else(|_| {
+            // Cross-volume fallback
+            if is_dir {
+                let mut copied = 0usize;
+                copy_dir_all(src, &dest, &mut copied)?;
+                std::fs::remove_dir_all(src)
+            } else {
+                std::fs::copy(src, &dest)?;
+                std::fs::remove_file(src)
+            }
+        });
+
+        match moved {
+            Ok(()) => {
+                success += 1;
+                let op = if is_dir { "move_dir" } else { "move" };
+                let _ = db_ref.with_conn(|conn| {
+                    undo_core::record_operation(
+                        conn,
+                        &batch_id,
+                        batch_name,
+                        seq,
+                        op,
+                        Some(src_str),
+                        Some(&dest_str),
+                        None,
+                    )?;
+                    Ok(())
+                });
+                seq += 1;
+                sync_db_paths(&db_ref, src_str, &dest_str, is_dir);
+            }
+            Err(e) => {
+                failed += 1;
+                errors.push(format!("{}: {}", src_str, e));
+            }
+        }
+    }
+
+    Ok(FileOpResult {
+        success,
+        failed,
+        errors,
+    })
+}
+
+/// Rename a single file or folder in place. Returns the new full path.
+#[tauri::command]
+pub async fn rename_path(
+    db: State<'_, Arc<Database>>,
+    path: String,
+    new_name: String,
+) -> Result<String, String> {
+    let src = Path::new(&path);
+    if !src.exists() {
+        return Err("경로가 존재하지 않습니다".into());
+    }
+    let trimmed = new_name.trim();
+    if trimmed.is_empty()
+        || trimmed.contains('/')
+        || trimmed.contains('\0')
+        || trimmed == "."
+        || trimmed == ".."
+    {
+        return Err("사용할 수 없는 이름입니다".into());
+    }
+    let parent = src.parent().ok_or("최상위 경로는 이름을 바꿀 수 없습니다")?;
+    let dest = parent.join(trimmed);
+    if dest.exists() {
+        return Err("같은 이름의 항목이 이미 있습니다".into());
+    }
+
+    let is_dir = src.is_dir();
+    std::fs::rename(src, &dest).map_err(|e| format!("이름 변경 실패: {}", e))?;
+    let dest_str = dest.to_string_lossy().to_string();
+
+    let db_ref = db.inner().clone();
+    let batch_id = uuid::Uuid::new_v4().to_string();
+    let op = if is_dir { "move_dir" } else { "move" };
+    let _ = db_ref.with_conn(|conn| {
+        undo_core::record_operation(
+            conn,
+            &batch_id,
+            "이름 변경",
+            0,
+            op,
+            Some(&path),
+            Some(&dest_str),
+            None,
+        )?;
+        Ok(())
+    });
+    sync_db_paths(&db_ref, &path, &dest_str, is_dir);
+
+    Ok(dest_str)
+}
+
+/// Move files or folders to the macOS Trash. Library rows under the trashed
+/// paths are purged — the Finder Trash remains the safety net.
+#[tauri::command]
+pub async fn trash_paths(
+    db: State<'_, Arc<Database>>,
+    paths: Vec<String>,
+) -> Result<FileOpResult, String> {
+    let result = crate::core::trash::trash_via_finder(&paths);
+    let db_ref = db.inner().clone();
+
+    // Following the existing convention: the first `success` paths succeeded
+    let trashed: Vec<&String> = paths.iter().take(result.success).collect();
+    if !trashed.is_empty() {
+        let _ = db_ref.with_conn(|conn| {
+            let tx = conn.unchecked_transaction()?;
+            for p in &trashed {
+                let prefix = format!("{}/%", p.trim_end_matches('/'));
+                tx.execute(
+                    "DELETE FROM duplicate_members WHERE media_id IN
+                     (SELECT id FROM media_files WHERE file_path = ?1 OR file_path LIKE ?2)",
+                    rusqlite::params![p, prefix],
+                )?;
+                tx.execute(
+                    "DELETE FROM bcut_members WHERE media_id IN
+                     (SELECT id FROM media_files WHERE file_path = ?1 OR file_path LIKE ?2)",
+                    rusqlite::params![p, prefix],
+                )?;
+                tx.execute(
+                    "DELETE FROM media_files WHERE file_path = ?1 OR file_path LIKE ?2",
+                    rusqlite::params![p, prefix],
+                )?;
+                tx.execute(
+                    "DELETE FROM source_folders WHERE path = ?1 OR path LIKE ?2",
+                    rusqlite::params![p, prefix],
+                )?;
+            }
+            tx.commit()?;
+            Ok(())
+        });
+    }
+
+    Ok(FileOpResult {
+        success: result.success,
+        failed: result.failed,
+        errors: result.errors,
+    })
+}

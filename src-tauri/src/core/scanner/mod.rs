@@ -35,12 +35,60 @@ impl MediaType {
     }
 }
 
+/// Directory names that never contain user photos — pruned everywhere so a
+/// whole-disk scan (e.g. adding "Macintosh HD" as a source) stays practical.
+const EXCLUDED_DIR_NAMES: &[&str] = &[
+    "Library",
+    "System",
+    "Applications",
+    "Volumes",
+    "node_modules",
+    "__MACOSX",
+    "Backups.backupdb",
+    "private",
+    "usr",
+    "bin",
+    "sbin",
+    "etc",
+    "var",
+    "dev",
+    "opt",
+    "cores",
+];
+
+/// macOS bundle directories that look like folders but are app internals.
+const EXCLUDED_BUNDLE_SUFFIXES: &[&str] = &[
+    ".app",
+    ".photoslibrary",
+    ".framework",
+    ".bundle",
+    ".xcodeproj",
+    ".xcassets",
+];
+
 pub fn scan_directory(dir: &Path) -> Vec<ScannedFile> {
     let mut files = Vec::new();
 
     for entry in WalkDir::new(dir)
         .follow_links(true)
         .into_iter()
+        .filter_entry(|e| {
+            // Never prune the root the user explicitly picked
+            if e.depth() == 0 || !e.file_type().is_dir() {
+                return true;
+            }
+            let name = e.file_name().to_string_lossy();
+            if name.starts_with('.') {
+                return false;
+            }
+            if EXCLUDED_DIR_NAMES.contains(&name.as_ref()) {
+                return false;
+            }
+            if EXCLUDED_BUNDLE_SUFFIXES.iter().any(|s| name.ends_with(s)) {
+                return false;
+            }
+            true
+        })
         .filter_map(|e| e.ok())
     {
         let path = entry.path();

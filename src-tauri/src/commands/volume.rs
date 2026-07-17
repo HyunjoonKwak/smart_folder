@@ -7,8 +7,11 @@ use crate::core::volume;
 static VOLUME_MONITORING: AtomicBool = AtomicBool::new(false);
 
 #[tauri::command]
-pub async fn get_mounted_volumes() -> Result<Vec<volume::VolumeInfo>, String> {
-    tokio::task::spawn_blocking(volume::detect_volumes)
+pub async fn get_mounted_volumes(
+    include_internal: Option<bool>,
+) -> Result<Vec<volume::VolumeInfo>, String> {
+    let include_internal = include_internal.unwrap_or(false);
+    tokio::task::spawn_blocking(move || volume::detect_volumes(include_internal))
         .await
         .map_err(|e| format!("Task error: {}", e))
 }
@@ -19,7 +22,7 @@ pub async fn start_volume_monitoring(app: AppHandle) -> Result<(), String> {
 
     // Monitor /Volumes/ for mount/unmount events using a polling approach
     tokio::spawn(async move {
-        let mut known: Vec<String> = volume::detect_volumes()
+        let mut known: Vec<String> = volume::detect_volumes(false)
             .iter()
             .map(|v| v.mount_point.clone())
             .collect();
@@ -35,7 +38,7 @@ pub async fn start_volume_monitoring(app: AppHandle) -> Result<(), String> {
                 break;
             }
 
-            let current: Vec<String> = volume::detect_volumes()
+            let current: Vec<String> = volume::detect_volumes(false)
                 .iter()
                 .map(|v| v.mount_point.clone())
                 .collect();

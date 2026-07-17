@@ -102,6 +102,14 @@ pub fn run() {
             commands::fileops::trash_review_files,
             commands::fileops::scan_date_folders,
             commands::fileops::rename_date_folders,
+            // Folder-level operations (A-Cut)
+            commands::fileops::copy_directory,
+            commands::fileops::move_paths,
+            commands::fileops::rename_path,
+            commands::fileops::trash_paths,
+            // Comments (A-Cut inspector)
+            commands::media::set_media_comment,
+            commands::media::get_media_comments,
             commands::organize::preview_organize,
             commands::organize::execute_organize,
             commands::undo::get_undo_history,

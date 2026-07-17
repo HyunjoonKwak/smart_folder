@@ -19,22 +19,34 @@ pub struct VolumeInfo {
 // Public API
 // ---------------------------------------------------------------------------
 
-/// Detect all currently-mounted removable volumes (SD cards, USB drives, etc.).
+/// Detect currently-mounted volumes.
 ///
 /// Implementation strategy:
 /// 1. List entries under `/Volumes/`.
 /// 2. For each entry run `diskutil info <mount_point>` and parse the
 ///    human-readable key/value output.
-/// 3. Keep only volumes that look removable (Removable Media, USB protocol,
-///    or external physical location).
-pub fn detect_volumes() -> Vec<VolumeInfo> {
+/// 3. Keep volumes that look removable (Removable Media, USB protocol,
+///    or external physical location); with `include_internal` the boot
+///    volume (`/`) and internal partitions are included as well.
+pub fn detect_volumes(include_internal: bool) -> Vec<VolumeInfo> {
+    let mut result: Vec<VolumeInfo> = Vec::new();
+
+    // The boot volume itself is mounted at `/`, not under /Volumes
+    if include_internal {
+        if let Some(mut info) = query_diskutil_info("/") {
+            if info.label.is_empty() {
+                info.label = "Macintosh HD".to_string();
+            }
+            info.is_removable = false;
+            result.push(info);
+        }
+    }
+
     let volumes_dir = Path::new("/Volumes");
     let Ok(entries) = std::fs::read_dir(volumes_dir) else {
         log::warn!("Could not read /Volumes directory");
-        return Vec::new();
+        return result;
     };
-
-    let mut result: Vec<VolumeInfo> = Vec::new();
 
     for entry in entries.flatten() {
         let mount_point = entry.path();
@@ -42,14 +54,13 @@ pub fn detect_volumes() -> Vec<VolumeInfo> {
             continue;
         };
 
-        // Skip the boot volume (usually mounted at /Volumes/Macintosh HD or /)
-        // by checking the symlink target.
+        // Skip the boot volume symlinks (already covered by `/` above)
         if mount_str == "/Volumes/Macintosh HD" || mount_str == "/Volumes/Macintosh HD - Data" {
             continue;
         }
 
         if let Some(info) = query_diskutil_info(mount_str) {
-            if info.is_removable {
+            if info.is_removable || include_internal {
                 result.push(info);
             }
         }

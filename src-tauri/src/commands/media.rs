@@ -230,6 +230,7 @@ pub async fn search_media(
                  LEFT JOIN media_exif me ON mf.id = me.media_id
                  WHERE mf.file_name LIKE ?1 OR mf.file_path LIKE ?1
                     OR me.camera_model LIKE ?1 OR me.camera_make LIKE ?1
+                    OR mf.comment LIKE ?1
                  ORDER BY COALESCE(me.date_taken, mf.modified_at) DESC
                  LIMIT ?2",
             )?;
@@ -285,6 +286,70 @@ pub async fn get_gps_media(
                     Ok(GpsMediaItem {
                         media_id: row.get(0)?, file_name: row.get(1)?, thumbnail: row.get(2)?,
                         latitude: row.get(3)?, longitude: row.get(4)?, date_taken: row.get(5)?,
+                    })
+                })?
+                .collect::<Result<Vec<_>, _>>()?;
+            Ok(rows)
+        })
+        .map_err(|e| format!("DB: {}", e))
+}
+
+// ---------------------------------------------------------------------------
+// Comments (A-Cut inspector)
+// ---------------------------------------------------------------------------
+
+#[derive(Debug, serde::Serialize)]
+pub struct MediaComment {
+    pub media_id: String,
+    pub comment: String,
+}
+
+/// Set, update or clear (empty string) the user comment on a media file.
+#[tauri::command]
+pub async fn set_media_comment(
+    db: State<'_, Arc<Database>>,
+    media_id: String,
+    comment: String,
+) -> Result<(), String> {
+    let db_ref = db.inner().clone();
+    let trimmed = comment.trim().to_string();
+
+    db_ref
+        .with_conn(|conn| {
+            if trimmed.is_empty() {
+                conn.execute(
+                    "UPDATE media_files SET comment = NULL WHERE id = ?1",
+                    params![media_id],
+                )?;
+            } else {
+                conn.execute(
+                    "UPDATE media_files SET comment = ?1 WHERE id = ?2",
+                    params![trimmed, media_id],
+                )?;
+            }
+            Ok(())
+        })
+        .map_err(|e| format!("DB: {}", e))
+}
+
+/// All media that carry a comment — used for grid badges and the inspector.
+#[tauri::command]
+pub async fn get_media_comments(
+    db: State<'_, Arc<Database>>,
+) -> Result<Vec<MediaComment>, String> {
+    let db_ref = db.inner().clone();
+
+    db_ref
+        .with_conn(|conn| {
+            let mut stmt = conn.prepare(
+                "SELECT id, comment FROM media_files
+                 WHERE comment IS NOT NULL AND comment != ''",
+            )?;
+            let rows = stmt
+                .query_map([], |row| {
+                    Ok(MediaComment {
+                        media_id: row.get(0)?,
+                        comment: row.get(1)?,
                     })
                 })?
                 .collect::<Result<Vec<_>, _>>()?;

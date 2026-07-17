@@ -60,6 +60,33 @@ pub async fn undo_batch(
                     })
                     .ok();
             }
+        } else if entry.operation == "move_dir" {
+            // Folder move/rename: revert every path under the old target prefix
+            if let (Some(source), Some(target)) = (&entry.source_path, &entry.target_path) {
+                let old_prefix = format!("{}/", target.trim_end_matches('/'));
+                let new_prefix = format!("{}/", source.trim_end_matches('/'));
+                db_ref
+                    .with_conn(|conn| {
+                        conn.execute(
+                            "UPDATE media_files
+                             SET file_path = ?2 || SUBSTR(file_path, LENGTH(?1) + 1)
+                             WHERE file_path LIKE ?1 || '%'",
+                            rusqlite::params![old_prefix, new_prefix],
+                        )?;
+                        conn.execute(
+                            "UPDATE source_folders
+                             SET path = ?2 || SUBSTR(path, LENGTH(?1) + 1)
+                             WHERE path LIKE ?1 || '%'",
+                            rusqlite::params![old_prefix, new_prefix],
+                        )?;
+                        conn.execute(
+                            "UPDATE source_folders SET path = ?1 WHERE path = ?2",
+                            rusqlite::params![source, target],
+                        )?;
+                        Ok(())
+                    })
+                    .ok();
+            }
         }
     }
 
