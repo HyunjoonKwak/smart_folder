@@ -6,7 +6,7 @@ import { TitleBar } from "@/components/layout/TitleBar";
 import { NavRail } from "@/components/layout/NavRail";
 import { Sidebar } from "@/components/sidebar/Sidebar";
 import { viewToArea } from "@/utils/navigation";
-import { DashboardView } from "@/components/dashboard/DashboardView";
+import { WorkbenchView } from "@/components/workbench/WorkbenchView";
 import { LibraryView } from "@/components/library/LibraryView";
 import { CullingWorkspace } from "@/components/culling/CullingWorkspace";
 import { OrganizeHub } from "@/components/organize/OrganizeHub";
@@ -102,7 +102,7 @@ function App() {
   const renderMainContent = () => {
     switch (currentView) {
       case "dashboard":
-        return <DashboardView />;
+        return <WorkbenchView />;
       case "gallery":
       case "map":
         return <LibraryView />;
@@ -127,7 +127,7 @@ function App() {
       case "nas":
         return <NasUploadView />;
       default:
-        return <DashboardView />;
+        return <WorkbenchView />;
     }
   };
 
