@@ -1,7 +1,30 @@
 {
   "app": {
-    "name": "스마트 폴더",
+    "name": "에이컷",
     "search": "검색..."
+  },
+  "rail": {
+    "ariaLabel": "주 내비게이션",
+    "workbench": "작업대",
+    "library": "라이브러리",
+    "select": "고르기",
+    "organize": "정리",
+    "nas": "NAS",
+    "settings": "설정"
+  },
+  "culling": {
+    "duplicates": "중복",
+    "bursts": "연사",
+    "review": "한 장씩"
+  },
+  "hub": {
+    "classify": "자동 분류",
+    "folders": "폴더"
+  },
+  "libraryView": {
+    "grid": "격자",
+    "list": "리스트",
+    "map": "지도"
   },
   "nav": {
     "dashboard": "대시보드",

@@ -35,6 +35,9 @@ pub fn run() {
                 .app_data_dir()
                 .expect("Failed to get app data directory");
 
+            // One-time migration from the legacy bundle identifier
+            migrate_legacy_app_data(&app_data_dir);
+
             let database =
                 Database::new(&app_data_dir).expect("Failed to initialize database");
             app.manage(Arc::new(database));
@@ -168,4 +171,62 @@ pub fn run() {
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
+}
+
+/// One-time migration of app data from the legacy bundle identifier
+/// (`com.smartcategory.media`) to the current one (`com.acut.media`).
+/// Runs before DB init: if the new data dir has no database yet and the
+/// legacy dir exists, move everything over (copy as fallback).
+fn migrate_legacy_app_data(new_dir: &std::path::Path) {
+    const LEGACY_ID: &str = "com.smartcategory.media";
+
+    if new_dir.join("smart_category.db").exists() {
+        return;
+    }
+    let Some(parent) = new_dir.parent() else {
+        return;
+    };
+    let old_dir = parent.join(LEGACY_ID);
+    if !old_dir.is_dir() || old_dir == new_dir {
+        return;
+    }
+
+    let is_empty = match std::fs::read_dir(new_dir) {
+        Ok(mut entries) => entries.next().is_none(),
+        Err(_) => true, // new dir does not exist yet
+    };
+    if !is_empty {
+        return;
+    }
+
+    let _ = std::fs::remove_dir(new_dir);
+    match std::fs::rename(&old_dir, new_dir) {
+        Ok(()) => {
+            log::info!(
+                "Migrated legacy app data: {} -> {}",
+                old_dir.display(),
+                new_dir.display()
+            );
+        }
+        Err(e) => {
+            log::warn!("Legacy data rename failed ({e}); copying instead");
+            if let Err(e) = copy_dir_recursive(&old_dir, new_dir) {
+                log::error!("Legacy data copy failed: {e}");
+            }
+        }
+    }
+}
+
+fn copy_dir_recursive(src: &std::path::Path, dst: &std::path::Path) -> std::io::Result<()> {
+    std::fs::create_dir_all(dst)?;
+    for entry in std::fs::read_dir(src)? {
+        let entry = entry?;
+        let target = dst.join(entry.file_name());
+        if entry.file_type()?.is_dir() {
+            copy_dir_recursive(&entry.path(), &target)?;
+        } else {
+            std::fs::copy(entry.path(), &target)?;
+        }
+    }
+    Ok(())
 }

@@ -1,8 +1,8 @@
 [package]
-name = "smart-category"
+name = "acut"
 version = "0.2.2"
-description = "스마트 폴더 - AI 기반 스마트 미디어 정리 도구"
-authors = ["스마트 폴더"]
+description = "에이컷 - 사진을 고르고 정리해 NAS로 올리는 컬링 스테이션"
+authors = ["에이컷"]
 license = "MIT"
 edition = "2021"
 rust-version = "1.77.2"

@@ -1,8 +1,8 @@
 {
   "$schema": "../node_modules/@tauri-apps/cli/config.schema.json",
-  "productName": "스마트 폴더",
+  "productName": "에이컷",
   "version": "0.2.2",
-  "identifier": "com.smartcategory.media",
+  "identifier": "com.acut.media",
   "build": {
     "frontendDist": "../dist",
     "devUrl": "http://localhost:1420",
@@ -12,7 +12,7 @@
   "app": {
     "windows": [
       {
-        "title": "스마트 폴더",
+        "title": "에이컷",
         "width": 1280,
         "height": 800,
         "minWidth": 800,

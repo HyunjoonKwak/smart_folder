@@ -7,11 +7,14 @@ import type {
   ScanProgress,
   OrganizePlan,
 } from "@/types";
+import { viewToArea, type AppArea } from "@/utils/navigation";
 
 interface AppState {
   // Navigation
   currentView: AppView;
   setCurrentView: (view: AppView) => void;
+  // Last visited view per area, so the rail returns to where you left off
+  lastAreaViews: Partial<Record<AppArea, AppView>>;
 
   // View mode
   viewMode: ViewMode;
@@ -80,7 +83,12 @@ interface AppState {
 
 export const useAppStore = create<AppState>((set) => ({
   currentView: "dashboard",
-  setCurrentView: (view) => set({ currentView: view }),
+  setCurrentView: (view) =>
+    set((state) => ({
+      currentView: view,
+      lastAreaViews: { ...state.lastAreaViews, [viewToArea(view)]: view },
+    })),
+  lastAreaViews: {},
 
   viewMode: "grid",
   setViewMode: (mode) => set({ viewMode: mode }),

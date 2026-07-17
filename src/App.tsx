@@ -3,7 +3,9 @@ import { invoke } from "@tauri-apps/api/core";
 import { useAppStore } from "@/stores/appStore";
 import { useScanProgress } from "@/hooks/useTauriEvents";
 import { TitleBar } from "@/components/layout/TitleBar";
+import { NavRail } from "@/components/layout/NavRail";
 import { Sidebar } from "@/components/sidebar/Sidebar";
+import { viewToArea } from "@/utils/navigation";
 import { DashboardView } from "@/components/dashboard/DashboardView";
 import { GalleryGrid } from "@/components/gallery/GalleryGrid";
 import { DuplicatesView } from "@/components/duplicates/DuplicatesView";
@@ -21,10 +23,7 @@ import { MapView } from "@/components/map/MapView";
 import { NasUploadView } from "@/components/nas/NasUploadView";
 import { Toasts } from "@/components/common/Toasts";
 import { resumePhase1IfPending } from "@/utils/phase1";
-import type { AppConfig, AppView, MediaStats } from "@/types";
-
-// The NAS view carries its own connection/folder panel, so it takes the full width
-const FULL_WIDTH_VIEWS: ReadonlySet<AppView> = new Set(["nas"]);
+import type { AppConfig, MediaStats } from "@/types";
 
 function App() {
   const currentView = useAppStore((s) => s.currentView);
@@ -122,11 +121,15 @@ function App() {
     }
   };
 
+  // The context sidebar (sources / filters) belongs to the library area only
+  const showSidebar = viewToArea(currentView) === "library";
+
   return (
     <div className="flex flex-col h-screen bg-bg-primary">
       <TitleBar />
       <div className="flex flex-1 overflow-hidden">
-        {!FULL_WIDTH_VIEWS.has(currentView) && <Sidebar />}
+        <NavRail />
+        {showSidebar && <Sidebar />}
         <main className="flex-1 flex flex-col overflow-hidden">
           {renderMainContent()}
         </main>

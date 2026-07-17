@@ -3,6 +3,39 @@
 version = 3
 
 [[package]]
+name = "acut"
+version = "0.2.2"
+dependencies = [
+ "base64 0.22.1",
+ "chrono",
+ "glob",
+ "image",
+ "kamadak-exif",
+ "log",
+ "notify",
+ "rayon",
+ "reqwest 0.12.28",
+ "rusqlite",
+ "serde",
+ "serde_json",
+ "serde_yaml",
+ "sha2",
+ "tauri",
+ "tauri-build",
+ "tauri-plugin-dialog",
+ "tauri-plugin-fs",
+ "tauri-plugin-log",
+ "tauri-plugin-shell",
+ "thiserror 2.0.18",
+ "tokio",
+ "tokio-cron-scheduler",
+ "tokio-util",
+ "uuid",
+ "walkdir",
+ "xxhash-rust",
+]
+
+[[package]]
 name = "adler2"
 version = "2.0.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -4532,39 +4565,6 @@ name = "smallvec"
 version = "1.15.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "67b1b7a3b5fe4f1376887184045fcf45c69e92af734b7aaddc05fb777b6fbd03"
-
-[[package]]
-name = "smart-category"
-version = "0.2.2"
-dependencies = [
- "base64 0.22.1",
- "chrono",
- "glob",
- "image",
- "kamadak-exif",
- "log",
- "notify",
- "rayon",
- "reqwest 0.12.28",
- "rusqlite",
- "serde",
- "serde_json",
- "serde_yaml",
- "sha2",
- "tauri",
- "tauri-build",
- "tauri-plugin-dialog",
- "tauri-plugin-fs",
- "tauri-plugin-log",
- "tauri-plugin-shell",
- "thiserror 2.0.18",
- "tokio",
- "tokio-cron-scheduler",
- "tokio-util",
- "uuid",
- "walkdir",
- "xxhash-rust",
-]
 
 [[package]]
 name = "socket2"

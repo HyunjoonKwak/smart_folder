@@ -1,7 +1,30 @@
 {
   "app": {
-    "name": "Smart Folder",
+    "name": "A-Cut",
     "search": "Search..."
+  },
+  "rail": {
+    "ariaLabel": "Main navigation",
+    "workbench": "Workbench",
+    "library": "Library",
+    "select": "Select",
+    "organize": "Organize",
+    "nas": "NAS",
+    "settings": "Settings"
+  },
+  "culling": {
+    "duplicates": "Duplicates",
+    "bursts": "Bursts",
+    "review": "One by one"
+  },
+  "hub": {
+    "classify": "Auto sort",
+    "folders": "Folders"
+  },
+  "libraryView": {
+    "grid": "Grid",
+    "list": "List",
+    "map": "Map"
   },
   "nav": {
     "dashboard": "Dashboard",
