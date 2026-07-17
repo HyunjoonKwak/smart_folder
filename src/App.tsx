@@ -17,7 +17,7 @@ import { AlbumManager } from "@/components/albums/AlbumManager";
 import { NasUploadView } from "@/components/nas/NasUploadView";
 import { Toasts } from "@/components/common/Toasts";
 import { resumePhase1IfPending } from "@/utils/phase1";
-import type { AppConfig, MediaStats } from "@/types";
+import type { AppConfig, MediaComment, MediaStats } from "@/types";
 
 function App() {
   const currentView = useAppStore((s) => s.currentView);
@@ -70,6 +70,28 @@ function App() {
     };
     loadUploaded();
   }, [setNasUploadedIds, refreshCounter]);
+
+  // Load media comments for grid badges / inspector
+  const setComments = useAppStore((s) => s.setComments);
+  useEffect(() => {
+    const loadComments = async () => {
+      try {
+        const list = await invoke<MediaComment[]>("get_media_comments");
+        setComments(new Map(list.map((c) => [c.media_id, c.comment])));
+      } catch {
+        // DB not ready yet
+      }
+    };
+    loadComments();
+  }, [setComments, refreshCounter]);
+
+  // Apply persisted gallery thumb size once config arrives
+  const setThumbSize = useAppStore((s) => s.setThumbSize);
+  useEffect(() => {
+    if (config?.gallery?.thumb_size) {
+      setThumbSize(config.gallery.thumb_size);
+    }
+  }, [config, setThumbSize]);
 
   // Resume thumbnail/EXIF processing left over from an interrupted scan
   // or the base64-to-file thumbnail migration

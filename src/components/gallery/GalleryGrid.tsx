@@ -6,7 +6,7 @@ import { useAppStore } from "@/stores/appStore";
 import { toast } from "@/stores/toastStore";
 import { formatFileSize, formatDate } from "@/utils/format";
 import { thumbSrc } from "@/utils/media";
-import { ImageOff, Check, Play, FolderSearch, StopCircle, RefreshCw, ChevronDown, ChevronRight, UploadCloud } from "lucide-react";
+import { ImageOff, Check, Play, FolderSearch, StopCircle, RefreshCw, ChevronDown, ChevronRight, UploadCloud, MessageSquareText } from "lucide-react";
 import type { MediaFile, MediaListResponse } from "@/types";
 
 export function GalleryGrid() {
@@ -29,6 +29,7 @@ export function GalleryGrid() {
   const groupBy = useAppStore((s) => s.groupBy);
   const refreshCounter = useAppStore((s) => s.refreshCounter);
   const nasUploadedIds = useAppStore((s) => s.nasUploadedIds);
+  const comments = useAppStore((s) => s.comments);
   const searchQueryRaw = useAppStore((s) => s.searchQuery);
 
   // Debounce the title-bar search so we don't hit SQLite on every keystroke
@@ -111,9 +112,15 @@ export function GalleryGrid() {
     loadFiles();
   }, [loadFiles, isScanning]);
 
-  const handleOpenFile = useCallback((file: MediaFile) => {
-    setPreviewFile(file);
-  }, []);
+  const setInspectorMedia = useAppStore((s) => s.setInspectorMedia);
+
+  const handleOpenFile = useCallback(
+    (file: MediaFile) => {
+      setPreviewFile(file);
+      setInspectorMedia(file);
+    },
+    [setInspectorMedia],
+  );
 
   const handleKeyDown = useCallback(
     (e: KeyboardEvent) => {
@@ -233,6 +240,14 @@ export function GalleryGrid() {
             <UploadCloud size={10} className="text-white" />
           </div>
         )}
+        {comments.has(file.id) && (
+          <div
+            className="absolute bottom-1.5 left-1.5 bg-amber-500/90 rounded-full p-1"
+            title={comments.get(file.id)}
+          >
+            <MessageSquareText size={10} className="text-white" />
+          </div>
+        )}
       </div>
       <div
         className={`absolute top-2 left-2 w-5 h-5 rounded-full flex items-center justify-center transition-opacity ${
@@ -253,7 +268,7 @@ export function GalleryGrid() {
         <p className="text-[10px] text-text-secondary mt-0.5">{formatFileSize(file.file_size)}</p>
       </div>
     </div>
-  ), [selectedMediaIds, toggleMediaSelection, handleOpenFile, nasUploadedIds]);
+  ), [selectedMediaIds, toggleMediaSelection, handleOpenFile, nasUploadedIds, comments]);
 
   useEffect(() => {
     window.addEventListener("keydown", handleKeyDown);
@@ -509,6 +524,7 @@ function VirtualCardGrid({
 }) {
   const scrollRef = useRef<HTMLDivElement>(null);
   const [width, setWidth] = useState(0);
+  const thumbSize = useAppStore((s) => s.thumbSize);
 
   useEffect(() => {
     const el = scrollRef.current;
@@ -522,7 +538,7 @@ function VirtualCardGrid({
   const innerWidth = Math.max(0, width - GRID_PADDING * 2);
   const cols = Math.max(
     1,
-    Math.floor((innerWidth + GRID_GAP) / (MIN_CARD_WIDTH + GRID_GAP))
+    Math.floor((innerWidth + GRID_GAP) / (thumbSize + GRID_GAP))
   );
   const cardWidth =
     innerWidth > 0 ? (innerWidth - (cols - 1) * GRID_GAP) / cols : MIN_CARD_WIDTH;
@@ -592,7 +608,7 @@ function VirtualCardGrid({
   );
 }
 
-function Thumbnail({ file }: { file: MediaFile; size?: number }) {
+export function Thumbnail({ file }: { file: MediaFile; size?: number }) {
   const [thumbError, setThumbError] = useState(false);
   const [error, setError] = useState(false);
 
@@ -841,6 +857,7 @@ function DateAccordion({
   renderFileCard: (file: MediaFile) => React.ReactNode;
 }) {
   const [isOpen, setIsOpen] = useState(true);
+  const thumbSize = useAppStore((s) => s.thumbSize);
 
   return (
     <div className="mb-3">
@@ -863,7 +880,12 @@ function DateAccordion({
         )}
       </button>
       {isOpen && (
-        <div className="grid grid-cols-[repeat(auto-fill,minmax(160px,1fr))] gap-2 mt-1">
+        <div
+          className="grid gap-2 mt-1"
+          style={{
+            gridTemplateColumns: `repeat(auto-fill, minmax(${thumbSize}px, 1fr))`,
+          }}
+        >
           {files.map(renderFileCard)}
         </div>
       )}

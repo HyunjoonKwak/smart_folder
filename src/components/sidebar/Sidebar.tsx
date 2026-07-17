@@ -43,8 +43,10 @@ export function Sidebar() {
   const currentView = useAppStore((s) => s.currentView);
   const mediaFilter = useAppStore((s) => s.mediaFilter);
   const groupBy = useAppStore((s) => s.groupBy);
+  const refreshCounter = useAppStore((s) => s.refreshCounter);
 
-  // Load saved folders on mount
+  // Load saved folders on mount and whenever something (e.g. the device
+  // panel) registers a new source
   useEffect(() => {
     const loadFolders = async () => {
       try {
@@ -55,7 +57,7 @@ export function Sidebar() {
       }
     };
     loadFolders();
-  }, []);
+  }, [refreshCounter]);
 
   const handleAddFolder = async () => {
     try {

@@ -10,6 +10,20 @@ pub struct AppConfig {
     pub sync_presets: Vec<SyncPreset>,
     pub schedules: Vec<ScheduleConfig>,
     pub mcp_enabled: bool,
+    #[serde(default)]
+    pub gallery: GalleryConfig,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct GalleryConfig {
+    /// Thumbnail cell size in px (80–320)
+    pub thumb_size: u32,
+}
+
+impl Default for GalleryConfig {
+    fn default() -> Self {
+        Self { thumb_size: 160 }
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -54,6 +68,7 @@ impl Default for AppConfig {
             sync_presets: Vec::new(),
             schedules: Vec::new(),
             mcp_enabled: false,
+            gallery: GalleryConfig::default(),
         }
     }
 }
@@ -91,6 +106,9 @@ impl AppConfig {
         if let Some(mcp_enabled) = partial.mcp_enabled {
             self.mcp_enabled = mcp_enabled;
         }
+        if let Some(gallery) = partial.gallery {
+            self.gallery = gallery;
+        }
     }
 }
 
@@ -100,4 +118,6 @@ pub struct PartialConfig {
     pub language: Option<String>,
     pub watch: Option<WatchConfig>,
     pub mcp_enabled: Option<bool>,
+    #[serde(default)]
+    pub gallery: Option<GalleryConfig>,
 }

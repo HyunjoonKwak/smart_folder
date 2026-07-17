@@ -3,6 +3,7 @@ import type {
   AppConfig,
   AppView,
   ViewMode,
+  MediaFile,
   MediaStats,
   ScanProgress,
   OrganizePlan,
@@ -71,6 +72,19 @@ interface AppState {
   // NAS upload ledger (media ids already uploaded to the NAS)
   nasUploadedIds: Set<string>;
   setNasUploadedIds: (ids: Set<string>) => void;
+
+  // Media comments (media_id -> comment text)
+  comments: Map<string, string>;
+  setComments: (comments: Map<string, string>) => void;
+  setComment: (mediaId: string, comment: string) => void;
+
+  // Gallery thumbnail size (px, 80–320)
+  thumbSize: number;
+  setThumbSize: (size: number) => void;
+
+  // Inspector (library right panel)
+  inspectorMedia: MediaFile | null;
+  setInspectorMedia: (media: MediaFile | null) => void;
 
   // Theme
   theme: "light" | "dark" | "system";
@@ -143,6 +157,26 @@ export const useAppStore = create<AppState>((set) => ({
 
   nasUploadedIds: new Set(),
   setNasUploadedIds: (ids) => set({ nasUploadedIds: ids }),
+
+  comments: new Map(),
+  setComments: (comments) => set({ comments }),
+  setComment: (mediaId, comment) =>
+    set((state) => {
+      const next = new Map(state.comments);
+      if (comment.trim() === "") {
+        next.delete(mediaId);
+      } else {
+        next.set(mediaId, comment.trim());
+      }
+      return { comments: next };
+    }),
+
+  thumbSize: 160,
+  setThumbSize: (size) =>
+    set({ thumbSize: Math.min(320, Math.max(80, size)) }),
+
+  inspectorMedia: null,
+  setInspectorMedia: (media) => set({ inspectorMedia: media }),
 
   theme: "system",
   setTheme: (theme) => set({ theme }),

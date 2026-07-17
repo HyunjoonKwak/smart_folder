@@ -24,7 +24,8 @@
   "libraryView": {
     "grid": "격자",
     "list": "리스트",
-    "map": "지도"
+    "map": "지도",
+    "thumbSize": "썸네일 크기 (⌘+ / ⌘−)"
   },
   "nav": {
     "dashboard": "대시보드",
@@ -254,13 +255,42 @@
     "reset": "초기화"
   },
   "volume": {
-    "title": "외장 디바이스",
+    "title": "장치",
     "noDevices": "연결된 외장 디바이스가 없습니다",
+    "noVolumes": "표시할 장치가 없습니다",
     "addAsSource": "소스로 추가",
+    "scanAll": "전체 검색",
+    "pickFolder": "폴더 선택",
+    "internal": "내장",
+    "scanStarted": "{{name}} 검색을 시작했습니다",
     "eject": "추출",
+    "free": "남음",
+    "total": "전체",
     "totalSpace": "전체 용량",
     "freeSpace": "여유 공간",
     "monitoring": "디바이스 모니터링 중"
+  },
+  "inspector": {
+    "title": "인스펙터",
+    "close": "닫기",
+    "size": "크기",
+    "dimensions": "해상도",
+    "dateTaken": "촬영일",
+    "type": "형식",
+    "folder": "폴더",
+    "tags": "태그",
+    "addTag": "태그 추가",
+    "addTagPlaceholder": "태그 입력 후 Enter",
+    "removeTag": "태그 제거",
+    "albums": "앨범",
+    "chooseAlbum": "앨범 선택…",
+    "addToAlbum": "앨범에 담기",
+    "addedToAlbum": "\"{{name}}\" 앨범에 담았습니다",
+    "comment": "코멘트",
+    "commentPlaceholder": "이 사진에 메모를 남겨보세요 — 검색에서도 찾을 수 있습니다",
+    "saveComment": "저장",
+    "saving": "저장 중…",
+    "commentSaved": "코멘트를 저장했습니다"
   },
   "tags": {
     "title": "태그 관리",

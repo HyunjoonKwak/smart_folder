@@ -24,7 +24,8 @@
   "libraryView": {
     "grid": "Grid",
     "list": "List",
-    "map": "Map"
+    "map": "Map",
+    "thumbSize": "Thumbnail size (⌘+ / ⌘−)"
   },
   "nav": {
     "dashboard": "Dashboard",
@@ -254,13 +255,42 @@
     "reset": "Reset"
   },
   "volume": {
-    "title": "External Devices",
+    "title": "Devices",
     "noDevices": "No external devices connected",
+    "noVolumes": "No devices to show",
     "addAsSource": "Add as Source",
+    "scanAll": "Scan all",
+    "pickFolder": "Pick folder",
+    "internal": "Internal",
+    "scanStarted": "Started scanning {{name}}",
     "eject": "Eject",
+    "free": "free",
+    "total": "total",
     "totalSpace": "Total Space",
     "freeSpace": "Free Space",
     "monitoring": "Monitoring devices"
+  },
+  "inspector": {
+    "title": "Inspector",
+    "close": "Close",
+    "size": "Size",
+    "dimensions": "Dimensions",
+    "dateTaken": "Taken",
+    "type": "Type",
+    "folder": "Folder",
+    "tags": "Tags",
+    "addTag": "Add tag",
+    "addTagPlaceholder": "Type a tag, press Enter",
+    "removeTag": "Remove tag",
+    "albums": "Albums",
+    "chooseAlbum": "Choose album…",
+    "addToAlbum": "Add to album",
+    "addedToAlbum": "Added to \"{{name}}\"",
+    "comment": "Comment",
+    "commentPlaceholder": "Leave a note — it's searchable too",
+    "saveComment": "Save",
+    "saving": "Saving…",
+    "commentSaved": "Comment saved"
   },
   "tags": {
     "title": "Tag Manager",

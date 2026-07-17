@@ -142,6 +142,16 @@ export interface AppConfig {
   sync_presets: SyncPreset[];
   schedules: ScheduleConfig[];
   mcp_enabled: boolean;
+  gallery: GalleryConfig;
+}
+
+export interface GalleryConfig {
+  thumb_size: number;
+}
+
+export interface MediaComment {
+  media_id: string;
+  comment: string;
 }
 
 // Sync
